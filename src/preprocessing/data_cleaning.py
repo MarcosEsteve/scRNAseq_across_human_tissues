@@ -1,5 +1,4 @@
 import numpy as np
-from sklearn.decomposition import PCA
 
 
 def filter_lowly_expressed_genes(expression_matrix, min_cells=3):
