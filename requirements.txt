@@ -4,3 +4,6 @@ numpy~=2.0.2
 statsmodels~=0.14.4
 umap-learn~=0.5.7
 matplotlib~=3.9.3
+leidenalg~=0.10.2
+igraph~=0.11.8
+tensorflow~=2.18.0
