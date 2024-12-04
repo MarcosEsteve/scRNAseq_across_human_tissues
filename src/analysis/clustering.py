@@ -185,3 +185,18 @@ def ensemble_clustering(data):
         final_labels.append(final_label)
 
     return pd.Series(final_labels, index=data.index)
+
+
+"""
+# Create a DataFrame with barcodes and their corresponding clusters
+clustering_results_df = pd.DataFrame({
+    'Barcode': cluster_labels.index,
+    'Cluster': cluster_labels.values
+})
+
+# Set Barcode as index for easier access later
+clustering_results_df.set_index('Barcode', inplace=True)
+
+# Display the clustering results
+print(clustering_results_df)
+"""
