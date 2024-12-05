@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 from scipy.spatial.distance import cdist
-import json
 
 
 def reference_based_assignment(df_expression, medians_path):
@@ -61,34 +60,7 @@ def correlation_based_assignment(df_expression, medians_path):
     return cell_assignments
 
 
-def ontology_based_assignment(df_expression, ontology_path): #falta programar
-    """
-    Assign cells in df_expression to cell types based on ontology.
-
-    Parameters:
-    - df_expression: pandas dataframe of target dataset (genes x cells), with clustering result as an additional column.
-    - ontology_path: str, path to the JSON file containing the ontology structure.
-
-    Returns:
-    - cell_assignments: pandas Series with cell barcode as index and assigned cell type as values.
-    """
-    # Load the ontology JSON data
-    with open(ontology_path, 'r') as f:
-        ontology_data = json.load(f)
-
-    # Extract the cell type taxonomy from the ontology data
-    cell_types = [node['cell_set_designation'] for node in ontology_data['node_attributes']]
-
-    # Here, you would need to implement a mapping between the ontology structure and your dataset
-    # For simplicity, assume we are assigning cells to one of the major categories based on their profile
-
-    # For now, just assign each cell to a random category (you should customize this logic)
-    cell_assignments = pd.Series(np.random.choice(cell_types, size=df_expression.shape[1]), index=df_expression.columns)
-
-    return cell_assignments
-
-
-def marker_based_assignment(df_expression, markers_path): # to be adjusted
+def marker_based_assignment(df_expression, markers_path):  # to be adjusted, falta cuadrar el markers file
     """
     Assign cells in df_expression to cell types based on marker gene expression.
 
@@ -132,3 +104,9 @@ def marker_based_assignment(df_expression, markers_path): # to be adjusted
         cell_assignments.append(assigned_cell_type)
 
     return pd.Series(cell_assignments, index=df_expression.columns)
+
+
+"""
+Ejemplo de uso
+assigned_types_reference_based = reference_based_assignment(expression_matrix, "path_to_medians.csv")
+"""
