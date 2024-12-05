@@ -3,18 +3,19 @@ from sklearn.metrics import adjusted_rand_score, silhouette_score, normalized_mu
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 
-def internal_evaluation(expression_matrix, cluster_labels, cell_type_labels):
+def internal_evaluation(expression_matrix, results_df):
     """
     Perform internal evaluation of clustering and cell type assignment.
 
     Parameters:
     -----------
     expression_matrix : pd.DataFrame
-        The gene expression matrix (cells x genes).
-    cluster_labels : pd.Series
-        Series containing cluster assignments for each cell.
-    cell_type_labels : pd.Series
-        Series containing cell type assignments for each cell.
+        The gene expression matrix (genes x barcodes), preprocessed and dimensionally reduced.
+    results_df : pd.DataFrame
+        A dataframe containing:
+        - 'barcode': Cell barcodes.
+        - 'cluster': Cluster assigned by the analysis.
+        - 'celltype': Predicted cell type based on the cluster.
 
     Returns:
     --------
@@ -25,8 +26,20 @@ def internal_evaluation(expression_matrix, cluster_labels, cell_type_labels):
         - NMI (Normalized Mutual Information)
         - V-measure
     """
+    # Ensure the input DataFrame has the required columns
+    if not {'barcode', 'cluster', 'celltype'}.issubset(results_df.columns):
+        raise ValueError("The results_df must contain 'barcode', 'cluster', and 'celltype' columns.")
+
+    # Align the expression matrix with the barcodes in the results_df
+    aligned_matrix = expression_matrix.loc[:, results_df['barcode']]
+
+    # Extract cluster labels and predicted cell types
+    cluster_labels = results_df['cluster']
+    cell_type_labels = results_df['celltype']
+
+    # Calculate internal metrics
     ari = adjusted_rand_score(cell_type_labels, cluster_labels)
-    silhouette = silhouette_score(expression_matrix, cluster_labels)
+    silhouette = silhouette_score(aligned_matrix.T, cluster_labels)  # Transpose to make samples x features
     nmi = normalized_mutual_info_score(cell_type_labels, cluster_labels)
     v_measure = v_measure_score(cell_type_labels, cluster_labels)
 
@@ -38,16 +51,22 @@ def internal_evaluation(expression_matrix, cluster_labels, cell_type_labels):
     }
 
 
-def external_evaluation(true_labels, predicted_labels):
+def external_evaluation(results_df, true_labels_df):
     """
     Perform external evaluation of cell type predictions.
 
     Parameters:
     -----------
-    true_labels : pd.Series
-        Series containing the true (reference) cell type labels.
-    predicted_labels : pd.Series
-        Series containing the predicted cell type labels.
+    results_df : pd.DataFrame
+        A dataframe containing:
+        - 'barcode': Cell barcodes.
+        - 'cluster': Cluster assigned by the analysis.
+        - 'celltype': Predicted cell type based on the cluster.
+
+    true_labels_df : pd.DataFrame
+        A dataframe containing:
+        - 'barcode': Cell barcodes.
+        - 'true_label': Ground truth cell type labels.
 
     Returns:
     --------
@@ -58,10 +77,22 @@ def external_evaluation(true_labels, predicted_labels):
         - Recall (weighted)
         - F1-score (weighted)
     """
+    # Merge the two dataframes on 'barcode' to align predictions with true labels
+    merged_df = pd.merge(results_df, true_labels_df, on='barcode', how='inner')
+
+    # Check if the merge resulted in an empty dataframe
+    if merged_df.empty:
+        raise ValueError("No overlapping barcodes found between the results and the true labels.")
+
+    # Extract the true and predicted labels
+    true_labels = merged_df['true_label']
+    predicted_labels = merged_df['celltype']
+
+    # Calculate evaluation metrics
     accuracy = accuracy_score(true_labels, predicted_labels)
-    precision = precision_score(true_labels, predicted_labels, average='weighted')
-    recall = recall_score(true_labels, predicted_labels, average='weighted')
-    f1 = f1_score(true_labels, predicted_labels, average='weighted')
+    precision = precision_score(true_labels, predicted_labels, average='weighted', zero_division=0)
+    recall = recall_score(true_labels, predicted_labels, average='weighted', zero_division=0)
+    f1 = f1_score(true_labels, predicted_labels, average='weighted', zero_division=0)
 
     return {
         "Accuracy": accuracy,
@@ -71,7 +102,7 @@ def external_evaluation(true_labels, predicted_labels):
     }
 
 
-def load_true_labels(metadata_path):
+def load_true_labels(metadata_path, barcode_column, celltype_column):
     """
     Load ground truth cell type labels from a metadata CSV file.
 
@@ -79,36 +110,28 @@ def load_true_labels(metadata_path):
     -----------
     metadata_path : str
         Path to the metadata CSV file.
+    barcode_column : str
+        Name of the column containing the unique cell barcodes.
+    celltype_column : str
+        Name of the column containing the ground truth cell type labels.
 
     Returns:
     --------
-    pd.Series
-        A series containing the ground truth cell type labels, indexed by cell barcodes.
+    pd.DataFrame
+        A dataframe containing the ground truth labels with two columns:
+        - 'barcode': Cell barcodes.
+        - 'true_label': Ground truth cell type labels.
     """
-    # Read the CSV file
+    # Read the metadata CSV file
     metadata = pd.read_csv(metadata_path)
 
-    # Extract the barcode (first column) and celltype_minor
-    ground_truth = pd.Series(metadata['celltype_minor'].values, index=metadata.iloc[:, 0])
+    # Validate required columns
+    if barcode_column not in metadata.columns or celltype_column not in metadata.columns:
+        raise ValueError(f"Columns '{barcode_column}' and '{celltype_column}' must exist in the metadata file.")
 
-    return ground_truth
+    # Create a DataFrame with relevant data
+    true_labels = metadata[[barcode_column, celltype_column]].rename(
+        columns={barcode_column: 'barcode', celltype_column: 'true_label'}
+    )
 
-
-"""
-# Example usage:
-# Assuming you have the following data:
-# expression_df: your expression matrix (pandas DataFrame)
-# df: a DataFrame containing 'cluster', 'predicted_cell_type', and 'true_cell_type' columns
-
-# Internal evaluation
-internal_metrics = internal_evaluation(expression_df, df['cluster'], df['predicted_cell_type'])
-print("Internal Metrics:")
-for metric, value in internal_metrics.items():
-    print(f"{metric}: {value}")
-
-# External evaluation (if you have reference data)
-external_metrics = external_evaluation(df['true_cell_type'], df['predicted_cell_type'])
-print("\nExternal Metrics:")
-for metric, value in external_metrics.items():
-    print(f"{metric}: {value}")
-"""
+    return true_labels
