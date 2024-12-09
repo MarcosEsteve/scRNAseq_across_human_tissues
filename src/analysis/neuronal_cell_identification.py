@@ -3,7 +3,7 @@ import numpy as np
 from scipy.spatial.distance import cdist
 
 
-def reference_based_assignment(df_expression, medians_path):
+def reference_based_assignment_from_medians(df_expression, medians_path):
     """
     Assign cells in df_expression to known cell types based on comparison with reference expression profiles (medians).
 
@@ -33,7 +33,7 @@ def reference_based_assignment(df_expression, medians_path):
     return cell_assignments
 
 
-def correlation_based_assignment(df_expression, medians_path):
+def correlation_based_assignment_from_medians(df_expression, medians_path):
     """
     Assign cells in df_expression to cell types based on correlation with reference cell types (medians).
 

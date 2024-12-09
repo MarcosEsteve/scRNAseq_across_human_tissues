@@ -3,7 +3,7 @@ import numpy as np
 from scipy.spatial.distance import cdist
 
 
-def generate_expression_profiles(expression_matrix, metadata_path, celltype_column='celltype_minor'):
+def generate_expression_profiles(expression_matrix, metadata_path, celltype_column='celltype_minor', sep=','):
     """
     Generate reference expression profiles (medians) from metadata and expression matrix.
 
@@ -15,6 +15,8 @@ def generate_expression_profiles(expression_matrix, metadata_path, celltype_colu
         Path to the metadata CSV file containing cell annotations.
     celltype_column : str
         Column in the metadata file indicating the cell type to group by.
+    sep : str, optional
+        Delimiter for the metadata file (default is ',' for CSV files, use '\t' for TSV files).
 
     Returns:
     --------
@@ -23,7 +25,7 @@ def generate_expression_profiles(expression_matrix, metadata_path, celltype_colu
         the mean expression for each gene in each cell type.
     """
     # Load the metadata
-    metadata = pd.read_csv(metadata_path)
+    metadata = pd.read_csv(metadata_path, sep=sep)
 
     # Ensure the metadata and expression matrix align by barcode
     metadata.set_index(metadata.columns[0], inplace=True)  # First column is assumed to be barcodes
@@ -39,7 +41,7 @@ def generate_expression_profiles(expression_matrix, metadata_path, celltype_colu
     return medians
 
 
-def reference_based_assignment_from_metadata(expression_matrix, metadata_path, celltype_column='celltype_minor'):
+def reference_based_assignment_from_metadata(expression_matrix, metadata_path, celltype_column='celltype_minor', sep=','):
     """
     Assign cells to known cell types using reference profiles generated from metadata.
 
@@ -51,6 +53,8 @@ def reference_based_assignment_from_metadata(expression_matrix, metadata_path, c
         Path to the metadata CSV file.
     celltype_column : str
         Column in the metadata indicating the cell type to group by.
+    sep : str, optional
+        Delimiter for the metadata file (default is ',' for CSV files, use '\t' for TSV files).
 
     Returns:
     --------
@@ -58,7 +62,7 @@ def reference_based_assignment_from_metadata(expression_matrix, metadata_path, c
         A series with cell barcodes as index and assigned cell types as values.
     """
     # Generate expression profiles
-    medians = generate_expression_profiles(expression_matrix, metadata_path, celltype_column)
+    medians = generate_expression_profiles(expression_matrix, metadata_path, celltype_column, sep)
 
     # Calculate Euclidean distance between cells and reference profiles
     distances = cdist(expression_matrix.T, medians.T, metric='euclidean')  # Transpose for cell alignment
@@ -68,7 +72,7 @@ def reference_based_assignment_from_metadata(expression_matrix, metadata_path, c
     return pd.Series([cell_types[i] for i in closest_indices], index=expression_matrix.columns)
 
 
-def correlation_based_assignment_from_metadata(expression_matrix, metadata_path, celltype_column='celltype_minor'):
+def correlation_based_assignment_from_metadata(expression_matrix, metadata_path, celltype_column='celltype_minor', sep=','):
     """
     Assign cells to cell types using correlation with profiles generated from metadata.
 
@@ -80,6 +84,8 @@ def correlation_based_assignment_from_metadata(expression_matrix, metadata_path,
         Path to the metadata CSV file.
     celltype_column : str
         Column in the metadata indicating the cell type to group by.
+    sep : str, optional
+        Delimiter for the metadata file (default is ',' for CSV files, use '\t' for TSV files).
 
     Returns:
     --------
@@ -87,7 +93,7 @@ def correlation_based_assignment_from_metadata(expression_matrix, metadata_path,
         A series with cell barcodes as index and assigned cell types as values.
     """
     # Generate expression profiles
-    medians = generate_expression_profiles(expression_matrix, metadata_path, celltype_column)
+    medians = generate_expression_profiles(expression_matrix, metadata_path, celltype_column, sep)
 
     # Calculate correlation between cells and reference profiles
     correlation_matrix = expression_matrix.T.corrwith(medians.T, method='pearson')
