@@ -156,7 +156,7 @@ def mixture_model_clustering(data, n_components=10):
     return pd.Series(labels, index=data.index)
 
 
-def ensemble_clustering(data):
+def ensemble_clustering(data, n_clusters=10, eps=0.5, min_samples=5, n_components=10):
     """
     Perform ensemble clustering by combining results from multiple algorithms (KMeans, DBSCAN and GMM).
 
@@ -168,9 +168,9 @@ def ensemble_clustering(data):
     """
 
     # Run multiple clustering algorithms
-    kmeans_labels = KMeans(n_clusters=10, random_state=42).fit_predict(data)
-    dbscan_labels = DBSCAN(eps=0.5, min_samples=5).fit_predict(data)
-    gmm = GaussianMixture(n_components=10, random_state=42).fit(data)
+    kmeans_labels = KMeans(n_clusters=n_clusters, random_state=42).fit_predict(data)
+    dbscan_labels = DBSCAN(eps=eps, min_samples=min_samples).fit_predict(data)
+    gmm = GaussianMixture(n_components=n_components, random_state=42).fit(data)
     gmm_labels = gmm.predict(data)
 
     # Combine results using majority voting

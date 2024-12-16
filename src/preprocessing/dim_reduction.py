@@ -6,7 +6,7 @@ from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 
 
-def apply_pca(expression_matrix, n_components=50):
+def apply_pca_no_optim(expression_matrix, n_components=50):
     """
     Apply PCA to the expression matrix.
 
@@ -23,6 +23,33 @@ def apply_pca(expression_matrix, n_components=50):
                         columns=[f'PC_{i+1}' for i in range(n_components)])
 
 
+def apply_pca(expression_matrix, threshold=0.90):
+    """
+    Apply PCA to the expression matrix, then select the optimal number of components
+    based on cumulative explained variance, and return only the selected components.
+
+    Parameters:
+    - expression_matrix (pd.DataFrame): A pandas SparseDataFrame where rows are genes and columns are cells.
+    - threshold (float): Desired cumulative explained variance threshold to select the optimal number of components.
+
+    Returns:
+    - pd.DataFrame: PCA-transformed data with cells as rows and selected PCs as columns.
+    """
+    # Apply PCA with all components
+    pca = PCA()
+    pca_result = pca.fit_transform(expression_matrix.T.sparse.to_dense())
+
+    # Select the optimal number of components based on explained variance
+    explained_variance_ratio = np.var(pca_result, axis=0) / np.sum(np.var(pca_result, axis=0))
+    cumulative_variance_ratio = np.cumsum(explained_variance_ratio)
+    n_components = np.argmax(cumulative_variance_ratio >= threshold) + 1
+
+    # Return the PCA-transformed data with the optimal number of components
+    pca_result_selected = pca_result[:, :n_components]
+    return pd.DataFrame(pca_result_selected, index=expression_matrix.columns,
+                        columns=[f'PC_{i+1}' for i in range(n_components)])
+
+
 def apply_umap(expression_matrix, n_components=2):
     """
     Apply UMAP to the expression matrix.
@@ -34,6 +61,9 @@ def apply_umap(expression_matrix, n_components=2):
     Returns:
     - pd.DataFrame: UMAP-transformed data with cells as rows and UMAP dimensions as columns.
     """
+    # Limit the number of components to 20 to avoid computational running increase
+    n_components = min(n_components, 20)
+
     reducer = umap.UMAP(n_components=n_components)
     umap_result = reducer.fit_transform(expression_matrix.T.sparse.to_dense())
     return pd.DataFrame(umap_result, index=expression_matrix.columns,
@@ -51,6 +81,9 @@ def apply_tsne(expression_matrix, n_components=2):
     Returns:
     - pd.DataFrame: t-SNE-transformed data with cells as rows and t-SNE dimensions as columns.
     """
+    # Limit the number of components to 20 to avoid computational running increase
+    n_components = min(n_components, 20)
+
     tsne = TSNE(n_components=n_components)
     tsne_result = tsne.fit_transform(expression_matrix.T.sparse.to_dense())
     return pd.DataFrame(tsne_result, index=expression_matrix.columns,
