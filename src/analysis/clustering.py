@@ -5,8 +5,7 @@ from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, AffinityPro
 from sklearn.mixture import GaussianMixture
 import leidenalg as la
 import igraph as ig
-from tensorflow.python.keras.layers import Input, Dense
-from tensorflow.python.keras.models import Model
+from tensorflow.keras import layers, models
 
 
 def graph_based_clustering_leiden(data, resolution=1.0, n_iterations=2):
@@ -102,18 +101,18 @@ def deep_learning_clustering(data, n_clusters=10, encoding_dim=32):
     - pd.Series: Cluster labels for each cell.
     """
     # Define the autoencoder model
-    input_layer = Input(shape=(data.shape[1],))
-    encoded = Dense(encoding_dim, activation='relu')(input_layer)
-    decoded = Dense(data.shape[1], activation='sigmoid')(encoded)
+    input_layer = layers.Input(shape=(data.shape[1],))
+    encoded = layers.Dense(encoding_dim, activation='relu')(input_layer)
+    decoded = layers.Dense(data.shape[1], activation='sigmoid')(encoded)
 
-    autoencoder = Model(input_layer, decoded)
+    autoencoder = models.Model(input_layer, decoded)
     autoencoder.compile(optimizer='adam', loss='mean_squared_error')
 
     # Train the autoencoder
     autoencoder.fit(data, data, epochs=50, batch_size=256, shuffle=True)
 
     # Encode the data
-    encoder = Model(input_layer, encoded)
+    encoder = models.Model(input_layer, encoded)
     encoded_data = encoder.predict(data)
 
     # Perform KMeans clustering on the encoded data

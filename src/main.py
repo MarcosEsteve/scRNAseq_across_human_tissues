@@ -203,9 +203,12 @@ cell_identification_methods = {
 
 ### Main Pipeline ###
 #this is done for PBMC, I have to replicate it for the other tissues
-expression_matrix = load_expression_data_from_mtx("./data/PBMC/PBMC_68k/hg19/")
+expression_matrix = load_expression_data_from_mtx("../data/PBMC/PBMC_68k/hg19/")
 #load true labels
 
+print(expression_matrix.info())
+
+"""
 for cleaning_method in data_cleaning_methods.keys():
     cleaned_data = execute_step('data_cleaning', data_cleaning_methods, cleaning_method, expression_matrix)
 
@@ -264,4 +267,5 @@ for cleaning_method in data_cleaning_methods.keys():
                         )
                         print(f"Results saved for pipeline: {pipeline_id}")
 
-print("Finish!")
+print("Finish!")"""
+
