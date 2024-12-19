@@ -204,7 +204,7 @@ cell_identification_methods = {
 ### Main Pipeline ###
 #this is done for PBMC, I have to replicate it for the other tissues
 expression_matrix = load_expression_data_from_mtx("../data/PBMC/PBMC_68k/hg19/")
-#load true labels
+true_labels = evaluation.load_true_labels(metadata_path, "barcodes", "celltype", "\t")
 
 print(expression_matrix.info())
 

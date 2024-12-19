@@ -102,14 +102,14 @@ def external_evaluation(results_df, true_labels_df):
     }
 
 
-def load_true_labels(metadata_path, barcode_column, celltype_column):
+def load_true_labels(metadata_path, barcode_column, celltype_column, sep='\t'):
     """
-    Load ground truth cell type labels from a metadata CSV file.
+    Load ground truth cell type labels from a metadata file.
 
     Parameters:
     -----------
     metadata_path : str
-        Path to the metadata CSV file.
+        Path to the metadata file.
     barcode_column : str
         Name of the column containing the unique cell barcodes.
     celltype_column : str
@@ -123,7 +123,7 @@ def load_true_labels(metadata_path, barcode_column, celltype_column):
         - 'true_label': Ground truth cell type labels.
     """
     # Read the metadata CSV file
-    metadata = pd.read_csv(metadata_path)
+    metadata = pd.read_csv(metadata_path, sep=sep)
 
     # Validate required columns
     if barcode_column not in metadata.columns or celltype_column not in metadata.columns:
