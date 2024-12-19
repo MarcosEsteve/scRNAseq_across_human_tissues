@@ -76,6 +76,7 @@ def load_expression_data_from_csv(csv_path, chunk_size=10000):
     return expression_matrix
 
 
+# TO DO: Change this function to adapt to output from cell identification methods
 def save_results(barcodes, clustering_results, cell_identification_results, pipeline_id, internal_metrics, external_metrics):
     # Build a dataframe with the results
     results = pd.DataFrame({
@@ -183,21 +184,11 @@ clustering_methods = {
 }
 
 metadata_path = "./data/PBMC/PBMC_68k/hg19/68_pbmc_barcodes_annotation.tsv"
-marker_genes_dict = {}
-# TO DO: change celltype name and marker genes
+
 cell_identification_methods = {
-    'reference_based_assignment': {
-        'func': cell_identification.reference_based_assignment_from_metadata,
-        'params': {'metadata_path': metadata_path, 'celltype_column': 'celltype_minor'}
-    },
-    'correlation_based_assignment': {
-        'func': cell_identification.correlation_based_assignment_from_metadata,
-        'params': {'metadata_path': metadata_path, 'celltype_column': 'celltype_minor'}
-    },
-    'marker_based_assignment': {
-        'func': cell_identification.marker_based_assignment,
-        'params': {'marker_genes': marker_genes_dict}
-    },
+    'reference_based_assignment': cell_identification.reference_based_assignment,
+    'correlation_based_assignment': cell_identification.correlation_based_assignment,
+    'marker_based_assignment': cell_identification.marker_based_assignment,
 }
 
 
@@ -239,14 +230,19 @@ for cleaning_method in data_cleaning_methods.keys():
                     clustering_results = execute_step('clustering', clustering_methods, cluster_method, reduced_data,
                                                       cluster_config['params'])
 
-                    for cell_id_method, cell_id_config in cell_identification_methods.items():
-                        # TO DO: not fine at all, i need the matrix too, clustering_results is just a pd.series
+                    for cell_id_method in cell_identification_methods.keys():
+                        if cell_id_method == 'marker_based_assignment':
+                            reference = cell_identification.generate_marker_reference()
+                        else:
+                            reference = cell_identification.generate_expression_profiles()
+                            
+                        
                         cell_identification_results = execute_step(
-                            'cell_identification', cell_identification_methods, cell_id_method, clustering_results, cell_id_config['params']
+                            'cell_identification', cell_identification_methods, cell_id_method, clustering_results, reference
                         )
 
                         # Internal Evaluation
-                        internal_metrics = evaluation.internal_evaluation(reduced_data, clustering_results)
+                        internal_metrics = evaluation.internal_evaluation(reduced_data, cell_identification_results)
 
                         # External Evaluation
                         external_metrics = evaluation.external_evaluation(cell_identification_results, true_labels_df)
