@@ -1,5 +1,7 @@
 import numpy as np
+import pandas as pd
 import statsmodels.api as sm
+from scipy.sparse import csr_matrix, vstack
 
 
 def normalize_cpm(expression_matrix):
@@ -38,19 +40,62 @@ def normalize_quantile_regression(expression_matrix):
     # Calculate library size
     library_size = expression_matrix.sum(axis=0)
 
-    # Log-transform the library size for regression
-    log_library_size = np.log1p(library_size).values.reshape(-1, 1)
+    # Normalizing library_size with log and mean-centering
+    library_size_normalized = np.log1p(library_size)
+    library_size_normalized = (library_size_normalized - library_size_normalized.mean()) / library_size_normalized.std()
 
-    normalized_data = expression_matrix.copy()
+    # Create a list to store normalized rows
+    normalized_rows = []
 
     for gene in expression_matrix.index:
-        y = expression_matrix.loc[gene].to_dense().values
-        mod = sm.QuantReg(y, log_library_size)
-        res = mod.fit(q=0.5)  # Median regression
-        predicted = res.predict(log_library_size)
-        normalized_data.loc[gene] = y - predicted + y.mean()
+        # Extract gene expression values as a sparse array
+        y = expression_matrix.loc[gene].values
 
-    return normalized_data.sparse.to_sparse()
+        # Ensure values are dense for statsmodels
+        y_dense = np.array(y, dtype=float)  # Convert sparse values to dense
+
+        # Check if the gen is expressed in any cell, if not, no normalization required
+        if np.any(y_dense > 0):
+            # Log-transform and normalize gene expression
+            y_dense_normalized = np.log1p(y_dense)
+            y_mean = np.mean(y_dense_normalized)
+            y_std = np.std(y_dense_normalized)
+            if y_std > 0:
+                # Normalize and perform quantile regression
+                y_dense_normalized = (y_dense_normalized - y_mean) / y_std
+
+                mod = sm.QuantReg(y_dense_normalized, sm.add_constant(library_size_normalized))
+                res = mod.fit(q=0.5)  # Median regression
+
+                # Predicted values and normalization
+                predicted = res.predict(sm.add_constant(library_size_normalized))
+                normalized_values = y_dense_normalized - predicted
+
+                # Convert back to original scale
+                normalized_values = np.expm1(normalized_values * y_std + y_mean)
+            else:
+                # If std is zero, return the original values
+                normalized_values = y_dense
+
+            # Convert the normalized values into a sparse array (CSR format)
+            sparse_row = csr_matrix(normalized_values)
+
+            # Append the normalized row to the list of rows (each as a sparse array)
+            normalized_rows.append(sparse_row)
+        else:
+            # If gene is not expressed in any cell, append the original values as sparse
+            sparse_row = csr_matrix(y_dense)
+            normalized_rows.append(sparse_row)
+
+    # Concatenate all rows (as sparse matrices) into a single sparse matrix
+    sparse_matrix = csr_matrix(vstack(normalized_rows))
+
+    # Convert the resulting sparse matrix into a SparseDataFrame
+    normalized_data = pd.DataFrame.sparse.from_spmatrix(sparse_matrix,
+                                                        index=expression_matrix.index,
+                                                        columns=expression_matrix.columns)
+
+    return normalized_data
 
 
 def normalize_negative_binomial(expression_matrix):
@@ -65,14 +110,44 @@ def normalize_negative_binomial(expression_matrix):
     Returns:
     - pd.DataFrame: A SparseDataFrame with negative binomial normalization applied.
     """
-    normalized_data = expression_matrix.copy()
+    # Create a list to store normalized rows
+    normalized_rows = []
 
     for gene in expression_matrix.index:
-        y = expression_matrix.loc[gene].to_dense().values
-        X = np.ones_like(y)  # Intercept only model
-        model = sm.GLM(y, X, family=sm.families.NegativeBinomial())
-        result = model.fit()
-        predicted = result.predict(X)
-        normalized_data.loc[gene] = y / predicted * y.mean()
+        # Extract gene expression values as a sparse array and convert to dense for regression
+        y = expression_matrix.loc[gene].sparse.to_dense().values
 
-    return normalized_data.sparse.to_sparse()
+        # If the gene is expressed in any cell, apply normalization
+        if np.any(y > 0):
+            # Create the design matrix X for the regression (intercept only model)
+            X = np.ones_like(y)  # Intercept-only model (no covariates)
+
+            # Fit Negative Binomial regression model using statsmodels
+            model = sm.GLM(y, X, family=sm.families.NegativeBinomial(alpha=1.0))
+            result = model.fit()
+
+            # Get predicted values from the model
+            predicted = result.predict(X)
+
+            # Perform normalization by adjusting for the predicted values
+            normalized_values = y / predicted * y.mean()
+
+            # Convert the normalized values into a sparse array (CSR format)
+            sparse_row = csr_matrix(normalized_values)
+
+            # Append the normalized row to the list of rows (as a sparse array)
+            normalized_rows.append(sparse_row)
+        else:
+            # If gene is not expressed in any cell, append the original values as sparse
+            sparse_row = csr_matrix(y)
+            normalized_rows.append(sparse_row)
+
+    # Concatenate all rows (as sparse matrices) into a single sparse matrix
+    sparse_matrix = vstack(normalized_rows)
+
+    # Convert the resulting sparse matrix into a SparseDataFrame
+    normalized_data = pd.DataFrame.sparse.from_spmatrix(sparse_matrix,
+                                                        index=expression_matrix.index,
+                                                        columns=expression_matrix.columns)
+
+    return normalized_data

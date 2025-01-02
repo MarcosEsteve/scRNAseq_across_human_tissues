@@ -11,7 +11,7 @@ import src.analysis.cell_identification as cell_identification
 import src.evaluation.evaluation as evaluation
 
 
-def load_expression_data_from_mtx(path):
+def load_expression_data_from_mtx(path, n_sample=None, random_state=None):
     """
     Load gene expression data from MTX format into a sparse DataFrame.
 
@@ -22,13 +22,20 @@ def load_expression_data_from_mtx(path):
     - expression_matrix: Sparse DataFrame containing gene expression data.
     """
     # Load expression matrix
-    matrix = scipy.io.mmread(path+"matrix.mtx")
+    matrix = scipy.io.mmread(path+"matrix.mtx").tocsc()
 
     # Load genes
     genes = pd.read_csv(path+"genes.tsv", header=None, sep='\t', names=['gene_id', 'gene_symbol'])
 
     # Load barcodes
     barcodes = pd.read_csv(path+"barcodes.tsv", header=None, sep='\t', names=['barcode'])
+
+    # Apply random sampling to barcodes if n_sample is specified
+    if n_sample is not None and n_sample < len(barcodes):
+        np.random.seed(random_state)
+        sampled_indices = np.random.choice(len(barcodes), size=n_sample, replace=False)
+        matrix = matrix[:, sampled_indices]  # Subset columns (barcodes)
+        barcodes = barcodes.iloc[sampled_indices]
 
     # Transform sparse matrix into pandas sparse DataFrame
     expression_matrix = pd.DataFrame.sparse.from_spmatrix(matrix)
