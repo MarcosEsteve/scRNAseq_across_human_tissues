@@ -13,9 +13,12 @@ def select_highly_variable_genes(expression_matrix, n_top_genes=2000):
     Returns:
     - pd.DataFrame: A SparseDataFrame containing only the highly variable genes.
     """
+    # Convert the sparse matrix to dense for calculations
+    dense_matrix = expression_matrix.sparse.to_dense()
+
     # Calculate mean and variance for each gene
-    gene_means = expression_matrix.mean(axis=1)
-    gene_vars = expression_matrix.var(axis=1)
+    gene_means = dense_matrix.mean(axis=1)
+    gene_vars = dense_matrix.var(axis=1)
 
     # Calculate the variance to mean ratio
     dispersion = gene_vars / gene_means
@@ -37,6 +40,8 @@ def select_genes_by_variance(expression_matrix, var_threshold=0.1):
     Returns:
     - pd.DataFrame: A SparseDataFrame containing only the selected genes.
     """
-    gene_vars = expression_matrix.var(axis=1)
+    # Convert the sparse matrix to dense for calculations
+    dense_matrix = expression_matrix.sparse.to_dense()
+    gene_vars = dense_matrix.var(axis=1)
     selected_genes = gene_vars[gene_vars > var_threshold].index
     return expression_matrix.loc[selected_genes]
