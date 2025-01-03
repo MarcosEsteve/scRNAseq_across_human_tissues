@@ -3,6 +3,24 @@ import pandas as pd
 from scipy.sparse import csc_matrix, diags
 
 
+def remove_duplicated_genes(expression_matrix):
+    # Remove duplicate genes by averaging their expression
+    # Identify duplicated genes in the expression matrix
+    duplicated_genes = expression_matrix.index[expression_matrix.index.duplicated(keep=False)]
+
+    # Compute the average expression for the duplicated genes
+    averaged_duplicates = expression_matrix.loc[duplicated_genes].groupby(
+        expression_matrix.loc[duplicated_genes].index).mean()
+
+    # Remove the duplicated genes from the original matrix
+    unique_matrix = expression_matrix.drop(index=duplicated_genes)
+
+    # Combine the unique genes with the averaged duplicates into a single matrix
+    deduplicated_matrix = pd.concat([unique_matrix, averaged_duplicates])
+
+    return deduplicated_matrix
+
+
 def filter_lowly_expressed_genes(expression_matrix, min_cells=3):
     """
         Filter Lowly Expressed Genes
@@ -18,18 +36,7 @@ def filter_lowly_expressed_genes(expression_matrix, min_cells=3):
         - pd.DataFrame: A filtered SparseDataFrame with only genes expressed in at least 'min_cells' cells.
     """
     # Remove duplicate genes by averaging their expression
-    # Identify duplicated genes in the expression matrix
-    duplicated_genes = expression_matrix.index[expression_matrix.index.duplicated(keep=False)]
-
-    # Compute the average expression for the duplicated genes
-    averaged_duplicates = expression_matrix.loc[duplicated_genes].groupby(
-        expression_matrix.loc[duplicated_genes].index).mean()
-
-    # Remove the duplicated genes from the original matrix
-    unique_matrix = expression_matrix.drop(index=duplicated_genes)
-
-    # Combine the unique genes with the averaged duplicates into a single matrix
-    deduplicated_matrix = pd.concat([unique_matrix, averaged_duplicates])
+    deduplicated_matrix = remove_duplicated_genes(expression_matrix)
 
     # Count the number of cells in which each gene is expressed
     expressed_cells = (deduplicated_matrix > 0).sum(axis=1)
@@ -56,18 +63,7 @@ def filter_high_mitochondrial_content(expression_matrix, max_mito_pct=0.1):
     - pd.DataFrame: A filtered SparseDataFrame with cells having mitochondrial content below the specified threshold.
     """
     # Remove duplicate genes by averaging their expression
-    # Identify duplicated genes in the expression matrix
-    duplicated_genes = expression_matrix.index[expression_matrix.index.duplicated(keep=False)]
-
-    # Compute the average expression for the duplicated genes
-    averaged_duplicates = expression_matrix.loc[duplicated_genes].groupby(
-        expression_matrix.loc[duplicated_genes].index).mean()
-
-    # Remove the duplicated genes from the original matrix
-    unique_matrix = expression_matrix.drop(index=duplicated_genes)
-
-    # Combine the unique genes with the averaged duplicates into a single matrix
-    deduplicated_matrix = pd.concat([unique_matrix, averaged_duplicates])
+    deduplicated_matrix = remove_duplicated_genes(expression_matrix)
 
     # Identify mitochondrial genes (assuming gene symbols start with 'MT-')
     mito_genes = deduplicated_matrix.index.str.startswith('MT-')
@@ -97,18 +93,7 @@ def filter_doublets_cxds(expression_matrix, threshold=0.9):
     - pd.DataFrame: A filtered SparseDataFrame with potential doublets removed.
     """
     # Remove duplicate genes by averaging their expression
-    # Identify duplicated genes in the expression matrix
-    duplicated_genes = expression_matrix.index[expression_matrix.index.duplicated(keep=False)]
-
-    # Compute the average expression for the duplicated genes
-    averaged_duplicates = expression_matrix.loc[duplicated_genes].groupby(
-        expression_matrix.loc[duplicated_genes].index).mean()
-
-    # Remove the duplicated genes from the original matrix
-    unique_matrix = expression_matrix.drop(index=duplicated_genes)
-
-    # Combine the unique genes with the averaged duplicates into a single matrix
-    deduplicated_matrix = pd.concat([unique_matrix, averaged_duplicates])
+    deduplicated_matrix = remove_duplicated_genes(expression_matrix)
 
     # Binarize the expression matrix: Convert the sparse DataFrame to binary (0 or 1)
     binarized_matrix = (deduplicated_matrix > 0).astype(int)
@@ -166,6 +151,9 @@ def combined_cleaning(expression_matrix, min_cells=3, max_mito_pct=0.1, doublet_
 
     # Filter the expression matrix to keep only the valid cells
     filtered_matrix = expression_matrix.loc[valid_genes, valid_cells]
+
+    # Remove duplicate genes by averaging their expression
+    filtered_matrix = remove_duplicated_genes(filtered_matrix)
 
     return filtered_matrix
 
