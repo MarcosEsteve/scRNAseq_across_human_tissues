@@ -19,11 +19,15 @@ def apply_pca_no_optim(expression_matrix, n_components=50):
     """
     pca = PCA(n_components=n_components)
     pca_result = pca.fit_transform(expression_matrix.T.sparse.to_dense())
-    return pd.DataFrame(pca_result, index=expression_matrix.columns,
-                        columns=[f'PC_{i+1}' for i in range(n_components)])
+    pca_df = pd.DataFrame(
+        pca_result,
+        index=expression_matrix.columns,
+        columns=[f'PC_{i + 1}' for i in range(n_components)]
+    )
+    return pca, pca_df
 
 
-def apply_pca(expression_matrix, threshold=0.90):
+def apply_pca(expression_matrix, threshold=0.5):
     """
     Apply PCA to the expression matrix, then select the optimal number of components
     based on cumulative explained variance, and return only the selected components.
@@ -39,15 +43,16 @@ def apply_pca(expression_matrix, threshold=0.90):
     pca = PCA()
     pca_result = pca.fit_transform(expression_matrix.T.sparse.to_dense())
 
-    # Select the optimal number of components based on explained variance
-    explained_variance_ratio = np.var(pca_result, axis=0) / np.sum(np.var(pca_result, axis=0))
-    cumulative_variance_ratio = np.cumsum(explained_variance_ratio)
-    n_components = np.argmax(cumulative_variance_ratio >= threshold) + 1
+    n_components = select_pca_components(pca, std_threshold=threshold)
+    pca_result_selected = pca_result[:, :n_components]
 
     # Return the PCA-transformed data with the optimal number of components
-    pca_result_selected = pca_result[:, :n_components]
-    return pd.DataFrame(pca_result_selected, index=expression_matrix.columns,
-                        columns=[f'PC_{i+1}' for i in range(n_components)])
+    pca_df = pd.DataFrame(
+        pca_result_selected,
+        index=expression_matrix.columns,
+        columns=[f'PC_{i + 1}' for i in range(n_components)]
+    )
+    return pca, pca_df
 
 
 def apply_umap(expression_matrix, n_components=2):
@@ -99,46 +104,56 @@ def visualize_dim_reduction(reduced_data, title):
     - title (str): Title for the plot.
     """
     plt.figure(figsize=(10, 8))
-    plt.scatter(reduced_data.iloc[:, 0], reduced_data.iloc[:, 1], alpha=0.5)
+    plt.scatter(reduced_data.iloc[:, 0], reduced_data.iloc[:, 1], alpha=0.5, s=10)
     plt.title(title)
     plt.xlabel(reduced_data.columns[0])
     plt.ylabel(reduced_data.columns[1])
+    plt.grid(True)
     plt.show()
 
 
-def elbow_plot(pca_result):
+def elbow_plot(pca_result, threshold=0.5):
     """
-    Create an elbow plot for PCA results.
+    Create an elbow plot using the standard deviation of each principal component.
 
     Parameters:
-    - pca_result (pd.DataFrame): PCA transformed data.
+    - pca (PCA object): The fitted PCA object.
+    - threshold (float): A threshold line to help decide the number of components to retain.
+
+    Returns:
+    - None: Displays the elbow plot.
     """
-    explained_variance = np.var(pca_result, axis=0)
-    cumulative_variance_ratio = np.cumsum(explained_variance) / np.sum(explained_variance)
+    # Compute standard deviation of each principal component
+    std_dev = np.sqrt(pca_result.explained_variance_)
 
     plt.figure(figsize=(10, 6))
-    plt.plot(range(1, len(cumulative_variance_ratio) + 1), cumulative_variance_ratio, 'bo-')
-    plt.xlabel('Number of Components')
-    plt.ylabel('Cumulative Explained Variance Ratio')
+    plt.plot(range(1, len(std_dev) + 1), std_dev, 'bo-', label='Standard Deviation')
+    plt.axhline(y=threshold, color='r', linestyle='--', label=f'Threshold: {threshold}')
+    plt.xlabel('Principal Component')
+    plt.ylabel('Standard Deviation')
     plt.title('PCA Elbow Plot')
-    plt.axhline(y=0.9, color='r', linestyle='--')
+    plt.legend()
+    plt.grid(True)
     plt.show()
 
 
-def select_pca_components(pca_result, threshold=0.90):
+def select_pca_components(pca, std_threshold=0.5):
     """
-    Select the optimal number of PCA components based on cumulative explained variance.
+    Select the optimal number of PCA components based on a standard deviation threshold.
 
     Parameters:
-    - pca_result (pd.DataFrame): PCA transformed data.
-    - threshold (float): Desired cumulative explained variance threshold.
+    - pca (PCA object): The fitted PCA object.
+    - std_threshold (float): Minimum standard deviation to retain a principal component.
 
     Returns:
     - int: Optimal number of components.
     """
-    explained_variance_ratio = np.var(pca_result, axis=0) / np.sum(np.var(pca_result, axis=0))
-    cumulative_variance_ratio = np.cumsum(explained_variance_ratio)
-    n_components = np.argmax(cumulative_variance_ratio >= threshold) + 1
+    # Compute standard deviation of each component
+    std_dev = np.sqrt(pca.explained_variance_)
+
+    # Count components with standard deviation above the threshold
+    n_components = np.sum(std_dev >= std_threshold)
+
     return n_components
 
 """

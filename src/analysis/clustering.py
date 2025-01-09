@@ -6,6 +6,7 @@ from sklearn.mixture import GaussianMixture
 import leidenalg as la
 import igraph as ig
 from tensorflow.keras import layers, models
+import matplotlib.pyplot as plt
 
 
 def graph_based_clustering_leiden(data, resolution=1.0, n_iterations=2):
@@ -67,7 +68,7 @@ def distance_based_clustering(data, n_clusters=10):
     Returns:
     - pd.Series: Cluster labels for each cell.
     """
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
     labels = kmeans.fit_predict(data)
     return pd.Series(labels, index=data.index)
 
@@ -116,7 +117,7 @@ def deep_learning_clustering(data, n_clusters=10, encoding_dim=32):
     encoded_data = encoder.predict(data)
 
     # Perform KMeans clustering on the encoded data
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
     labels = kmeans.fit_predict(encoded_data)
 
     return pd.Series(labels, index=data.index)
@@ -167,7 +168,7 @@ def ensemble_clustering(data, n_clusters=10, eps=0.5, min_samples=5, n_component
     """
 
     # Run multiple clustering algorithms
-    kmeans_labels = KMeans(n_clusters=n_clusters, random_state=42).fit_predict(data)
+    kmeans_labels = KMeans(n_clusters=n_clusters, random_state=42, n_init=10).fit_predict(data)
     dbscan_labels = DBSCAN(eps=eps, min_samples=min_samples).fit_predict(data)
     gmm = GaussianMixture(n_components=n_components, random_state=42).fit(data)
     gmm_labels = gmm.predict(data)
@@ -185,6 +186,30 @@ def ensemble_clustering(data, n_clusters=10, eps=0.5, min_samples=5, n_component
 
     return pd.Series(final_labels, index=data.index)
 
+
+def visualize_clusters(reduced_data, title, labels):
+    """
+    Visualize the results of clustering.
+
+    Parameters:
+    - reduced_data (pd.DataFrame): Dimensionality reduced data.
+    - title (str): Title for the plot.
+    """
+    plt.figure(figsize=(10, 8))
+
+    unique_labels = np.unique(labels)
+    for label in unique_labels:
+        # Check if label is not -1 (outliers, in case of DBSCAN)
+        if label != -1:
+            plt.scatter(reduced_data[labels == label].iloc[:, 0],
+                        reduced_data[labels == label].iloc[:, 1],
+                        label=f'Cluster {label}', alpha=0.5, s=10)
+    plt.title(title)
+    plt.legend(title='Clusters', loc='upper right')
+    plt.xlabel(reduced_data.columns[0])
+    plt.ylabel(reduced_data.columns[1])
+    plt.grid(True)
+    plt.show()
 
 """
 # Create a DataFrame with barcodes and their corresponding clusters
