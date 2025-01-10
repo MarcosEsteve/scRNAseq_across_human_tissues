@@ -42,6 +42,8 @@ def load_expression_data_from_mtx(path, n_sample=None, random_state=None):
     expression_matrix.index = genes['gene_symbol']
     expression_matrix.columns = barcodes['barcode']
 
+    expression_matrix = data_cleaning.remove_duplicated_genes(expression_matrix)
+
     return expression_matrix
 
 
