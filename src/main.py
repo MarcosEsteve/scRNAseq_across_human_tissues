@@ -2,6 +2,7 @@ import pandas as pd
 import scipy.io
 import numpy as np
 import scipy.sparse
+import os
 import src.preprocessing.data_cleaning as data_cleaning
 import src.preprocessing.normalization as normalization
 import src.preprocessing.feature_selection as feature_selection
@@ -85,25 +86,67 @@ def load_expression_data_from_csv(csv_path, chunk_size=10000):
     return expression_matrix
 
 
-# TO DO: Change this function to adapt to output from cell identification methods
-def save_results(barcodes, clustering_results, cell_identification_results, pipeline_id, internal_metrics, external_metrics):
-    # Build a dataframe with the results
-    results = pd.DataFrame({
-        'pipeline_metadata': pipeline_id,  # string indicating the configuration
-        'barcode': barcodes,
-        'cluster': clustering_results,
-        'cell_type': cell_identification_results,
+def save_results(pipeline_id, cell_identification_results, internal_metrics,
+                 external_metrics, reduced_matrix, tissue):
+    """
+        Save the results of the pipeline including clustering, cell identification, and metrics.
+
+        Parameters:
+        -----------
+        pipeline_id : str
+            Unique identifier for the pipeline configuration.
+        cell_identification_results : pd.DataFrame
+            DataFrame containing 'barcode', 'cluster', and 'celltype' columns.
+        internal_metrics : dict
+            Dictionary containing internal evaluation metrics such as ARI, Silhouette, etc.
+        external_metrics : dict
+            Dictionary containing external evaluation metrics such as Accuracy, Precision, etc.
+        reduced_matrix : pd.DataFrame
+            Reduced dimensionality matrix (cells x dimensions).
+        tissue : str
+            Name of the tissue analyzed (e.g. PBMC).
+        """
+    # Create the results folder for the tissue if it doesn't exist
+    tissue_results_path = f'results/{tissue}_results'
+    os.makedirs(tissue_results_path, exist_ok=True)
+
+    # Create the reduced matrix folder for the tissue if it doesn't exist
+    tissue_reduced_matrix_path = f'{tissue_results_path}/{tissue}_reduced_matrix'
+    os.makedirs(tissue_reduced_matrix_path, exist_ok=True)
+
+    # Create a new row with the results of the pipeline
+    result_row = {
+        'pipeline_id': pipeline_id,  # Unique identifier for the pipeline
+        'barcodes': ','.join(cell_identification_results['barcode'].tolist()),  # Convert the barcode list to a comma-separated string
+        'clusters': ','.join(map(str, cell_identification_results['cluster'].tolist())),  # Convert clusters to string
+        'cell_types': ','.join(cell_identification_results['celltype'].tolist()),  # Convert cell types to string
         'ARI': internal_metrics['ARI'],
-        'Silhouette': internal_metrics['Silhouette'],
+        'Silhouette_Score': internal_metrics['Silhouette_Score'],
         'NMI': internal_metrics['NMI'],
-        'V_measure': internal_metrics['V-measure'],
+        'V_measure': internal_metrics['V_measure'],
         'Accuracy': external_metrics['Accuracy'],
         'Precision': external_metrics['Precision'],
         'Recall': external_metrics['Recall'],
-        'F1_score': external_metrics['F1-score']
-    })
-    # Save the dataframe in a csv file
-    results.to_csv(f'results/{pipeline_id}_results.csv', index=False)
+        'F1_score': external_metrics['F1_score']
+    }
+
+    # Save the results to a CSV file
+    results_df = pd.DataFrame([result_row])
+
+    # Check if the file already exists
+    results_file_path = f'{tissue_results_path}/{tissue}_all_results.csv'
+    if not os.path.exists(results_file_path):
+        # If it doesn't exist, create it with headers
+        results_df.to_csv(results_file_path, index=False, mode='w', header=True)
+    else:
+        # If it exists, append the new row without headers
+        results_df.to_csv(results_file_path, index=False, mode='a', header=False)
+
+    # Save the reduced dimensionality matrix in compressed format (CSV gzip) in the tissue-specific folder
+    reduced_matrix_file_path = f'{tissue_reduced_matrix_path}/{pipeline_id}_matrix.csv.gz'
+    reduced_matrix.to_csv(reduced_matrix_file_path, index=False, compression='gzip')
+
+    print(f"Results for pipeline {pipeline_id} saved successfully.")
 
 
 def generate_pipeline_id(methods_list):
@@ -156,49 +199,48 @@ def execute_step(step_name, methods_dict, method_name, data, extra_params=None):
 
 # Dictionaries to execute methods in pipeline
 data_cleaning_methods = {
-    'filter_lowly_expressed_genes': data_cleaning.filter_lowly_expressed_genes,
-    'filter_high_mitochondrial_content': data_cleaning.filter_high_mitochondrial_content,
-    'filter_doublets_cxds': data_cleaning.filter_doublets_cxds,
-    'combined_cleaning': data_cleaning.combined_cleaning,
-    'no_cleaning': lambda expression_matrix, *args, **kwargs: expression_matrix  # Returns the matrix with no changes
+    'FLEG': data_cleaning.filter_lowly_expressed_genes,
+    'FHMC': data_cleaning.filter_high_mitochondrial_content,
+    'FD': data_cleaning.filter_doublets_cxds,
+    'CC': data_cleaning.combined_cleaning,
 }
 
 normalization_methods = {
-    "cpm": normalization.normalize_cpm,
-    "quantile_regression": normalization.normalize_quantile_regression,
-    "negative_binomial": normalization.normalize_negative_binomial,
+    "CPM": normalization.normalize_cpm,
+    "QR": normalization.normalize_quantile_regression,
+    "NB": normalization.normalize_negative_binomial,
 }
 
 feature_selection_methods = {
-    'select_highly_variable_genes': feature_selection.select_highly_variable_genes,
-    'select_genes_by_variance': feature_selection.select_genes_by_variance,
+    'SHVG': feature_selection.select_highly_variable_genes,
+    'SGbV': feature_selection.select_genes_by_variance,
 }
 
 dim_reduction_methods = {
-    'apply_pca': dim_reduction.apply_pca,
-    'apply_umap': dim_reduction.apply_umap,
-    'apply_tsne': dim_reduction.apply_tsne,
+    'PCA': dim_reduction.apply_pca,
+    'UMAP': dim_reduction.apply_umap,
+    'TSNE': dim_reduction.apply_tsne,
 }
 
 # TO DO: adjust params
 clustering_methods = {
-    'graph_based_clustering_leiden': {'func': clustering.graph_based_clustering_leiden, 'params': {'resolution': 1}},
-    'density_based_clustering': {'func': clustering.density_based_clustering, 'params': {'eps': 0.5, 'min_samples': 5}},
-    'distance_based_clustering': {'func': clustering.distance_based_clustering, 'params': {'n_clusters': 10}},
-    'hierarchical_clustering': {'func': clustering.hierarchical_clustering, 'params': {'n_clusters': 5}},
-    'deep_learning_clustering': {'func': clustering.deep_learning_clustering, 'params': {'n_clusters': 10, 'encoding_dim': 32}},
-    'affinity_propagation_clustering': {'func': clustering.affinity_propagation_clustering, 'params': None},
-    'mixture_model_clustering': {'func': clustering.mixture_model_clustering, 'params': {'n_components': None}},  # n_components is chosen from previous step
-    'ensemble_clustering': {'func': clustering.ensemble_clustering, 'params': {'n_estimators': 10}},
+    'GBC': {'func': clustering.graph_based_clustering_leiden, 'params': {'resolution': 1}},
+    'DeBC': {'func': clustering.density_based_clustering, 'params': {'eps': 0.5, 'min_samples': 5}},
+    'DiBC': {'func': clustering.distance_based_clustering, 'params': {'n_clusters': 10}},
+    'HC': {'func': clustering.hierarchical_clustering, 'params': {'n_clusters': 5}},
+    'DLC': {'func': clustering.deep_learning_clustering, 'params': {'n_clusters': 10, 'encoding_dim': 32}},
+    'APC': {'func': clustering.affinity_propagation_clustering, 'params': None},
+    'MMC': {'func': clustering.mixture_model_clustering, 'params': {'n_components': None}},  # n_components is chosen from previous step
+    'EC': {'func': clustering.ensemble_clustering, 'params': {'n_estimators': 10}},
+}
+
+cell_identification_methods = {
+    'RBA': cell_identification.reference_based_assignment,
+    'CBA': cell_identification.correlation_based_assignment,
+    'MBA': cell_identification.marker_based_assignment,
 }
 
 metadata_path = "./data/PBMC/PBMC_68k/hg19/68_pbmc_barcodes_annotation.tsv"
-
-cell_identification_methods = {
-    'reference_based_assignment': cell_identification.reference_based_assignment,
-    'correlation_based_assignment': cell_identification.correlation_based_assignment,
-    'marker_based_assignment': cell_identification.marker_based_assignment,
-}
 
 
 ### Main Pipeline ###

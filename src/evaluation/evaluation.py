@@ -10,7 +10,7 @@ def internal_evaluation(expression_matrix, results_df):
     Parameters:
     -----------
     expression_matrix : pd.DataFrame
-        The gene expression matrix (genes x barcodes), preprocessed and dimensionally reduced.
+        The reduced gene expression matrix (barcodes x dimensions).
     results_df : pd.DataFrame
         A dataframe containing:
         - 'barcode': Cell barcodes.
@@ -26,28 +26,24 @@ def internal_evaluation(expression_matrix, results_df):
         - NMI (Normalized Mutual Information)
         - V-measure
     """
-    # Ensure the input DataFrame has the required columns
-    if not {'barcode', 'cluster', 'celltype'}.issubset(results_df.columns):
-        raise ValueError("The results_df must contain 'barcode', 'cluster', and 'celltype' columns.")
-
     # Align the expression matrix with the barcodes in the results_df
-    aligned_matrix = expression_matrix.loc[:, results_df['barcode']]
+    aligned_matrix = expression_matrix.loc[results_df['barcode']]
 
     # Extract cluster labels and predicted cell types
     cluster_labels = results_df['cluster']
     cell_type_labels = results_df['celltype']
 
     # Calculate internal metrics
+    silhouette = silhouette_score(aligned_matrix, cluster_labels)
     ari = adjusted_rand_score(cell_type_labels, cluster_labels)
-    silhouette = silhouette_score(aligned_matrix.T, cluster_labels)  # Transpose to make samples x features
     nmi = normalized_mutual_info_score(cell_type_labels, cluster_labels)
     v_measure = v_measure_score(cell_type_labels, cluster_labels)
 
     return {
+        "Silhouette_Score": silhouette,
         "ARI": ari,
-        "Silhouette": silhouette,
         "NMI": nmi,
-        "V-measure": v_measure
+        "V_measure": v_measure
     }
 
 
@@ -80,10 +76,6 @@ def external_evaluation(results_df, true_labels_df):
     # Merge the two dataframes on 'barcode' to align predictions with true labels
     merged_df = pd.merge(results_df, true_labels_df, on='barcode', how='inner')
 
-    # Check if the merge resulted in an empty dataframe
-    if merged_df.empty:
-        raise ValueError("No overlapping barcodes found between the results and the true labels.")
-
     # Extract the true and predicted labels
     true_labels = merged_df['true_label']
     predicted_labels = merged_df['celltype']
@@ -98,7 +90,7 @@ def external_evaluation(results_df, true_labels_df):
         "Accuracy": accuracy,
         "Precision": precision,
         "Recall": recall,
-        "F1-score": f1
+        "F1_score": f1
     }
 
 

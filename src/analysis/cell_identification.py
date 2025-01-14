@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from scipy.spatial.distance import cdist
+import matplotlib.pyplot as plt
 
 
 # Function to generate expression profiles
@@ -116,11 +117,11 @@ def reference_based_assignment(expression_matrix_processed, cluster_results, exp
     aligned_expression_matrix = expression_matrix_processed.loc[:, cluster_results.index]
 
     # Align the genes of expression_profile with the processed expression matrix
-    common_genes = expression_profile.index.intersection(expression_matrix_processed.index)
+    common_genes = expression_profile.index.intersection(aligned_expression_matrix.index)
 
     # Filter both expression_profile and expression_matrix_processed to include only common genes
     expression_profile_filtered = expression_profile.loc[common_genes]
-    expression_matrix_processed_filtered = expression_matrix_processed.loc[common_genes, :]
+    expression_matrix_processed_filtered = aligned_expression_matrix.loc[common_genes, :]
 
     # Calculate the average expression profile for each cluster using processed data
     cluster_profiles = cluster_results.groupby(cluster_results).apply(
@@ -144,12 +145,14 @@ def reference_based_assignment(expression_matrix_processed, cluster_results, exp
 
 
 # Correlation-Based assignment function
-def correlation_based_assignment(cluster_results, expression_profile):
+def correlation_based_assignment(expression_matrix_processed, cluster_results, expression_profile):
     """
     Assign cell types to clusters based on correlation with a reference profile.
 
     Parameters:
     -----------
+    expression_matrix_processed : pd.DataFrame
+        Gene expression matrix (genes x cells), where columns are cell barcodes.
     cluster_results : pd.Series
         Series with barcodes as index and cluster labels as values.
     expression_profile : pd.DataFrame
@@ -160,34 +163,46 @@ def correlation_based_assignment(cluster_results, expression_profile):
     pd.DataFrame
         DataFrame with 'barcode', 'cluster', and 'celltype' columns.
     """
+    # Align the processed expression matrix with the cluster results
+    aligned_expression_matrix = expression_matrix_processed.loc[:, cluster_results.index]
+
+    # Align the genes in the expression matrix and reference profile
+    common_genes = expression_profile.index.intersection(aligned_expression_matrix.index)
+    expression_profile_filtered = expression_profile.loc[common_genes]
+    expression_matrix_processed_filtered = aligned_expression_matrix.loc[common_genes, :]
+
     # Calculate the average expression profile for each cluster
     cluster_profiles = cluster_results.groupby(cluster_results).apply(
-        lambda indices: expression_profile.loc[:, indices.index].mean(axis=1)
-    )
+        lambda group: expression_matrix_processed_filtered.loc[:, group.index].mean(axis=1)
+    ).unstack().T
 
-    # Assign cell types based on maximum correlation
+    # Calculate correlations between cluster profiles and the reference profiles
     cell_type_assignments = []
     for cluster in cluster_profiles.columns:
-        correlations = expression_profile.corrwith(cluster_profiles[cluster])
+        # Compute correlation with each cell type in the reference profile
+        correlations = expression_profile_filtered.corrwith(cluster_profiles[cluster])
+        # Assign the cell type with the highest correlation
         cell_type_assignments.append(correlations.idxmax())
 
-    # Create the results DataFrame, ensuring the alignment with barcodes
+    # Create a results DataFrame aligning barcodes with their assigned cell types
     results_df = pd.DataFrame({
-        'barcode': cluster_results.index,  # Align with barcode index
+        'barcode': cluster_results.index,
         'cluster': cluster_results.values,
-        'celltype': [cell_type_assignments[cluster - 1] for cluster in cluster_results.values]
+        'celltype': [cell_type_assignments[cluster] for cluster in cluster_results.values]
     })
 
     return results_df
 
 
 # Marker-based assignment function
-def marker_based_assignment(cluster_results, marker_reference):
+def marker_based_assignment(expression_matrix_processed, cluster_results, marker_reference):
     """
     Assign cell types to clusters based on marker gene expression using the marker reference.
 
     Parameters:
     -----------
+    expression_matrix_processed : pd.DataFrame
+        Processed gene expression matrix (genes x cells).
     cluster_results : pd.Series
         Series with barcodes as index and cluster labels as values.
     marker_reference : dict
@@ -201,15 +216,18 @@ def marker_based_assignment(cluster_results, marker_reference):
     """
     cluster_scores = {}
 
-    for cluster, indices in cluster_results.groupby(cluster_results):
+    for cluster, barcodes in cluster_results.groupby(cluster_results):
+        cluster_expression = expression_matrix_processed.loc[:, barcodes.index]
         scores = {}
 
-        # Iterate over cell types and their markers in the marker_reference
+        # Iterate over cell types and their marker genes
         for cell_type, markers in marker_reference.items():
-            valid_markers = [gene for gene in markers if gene in indices.index]
+            valid_markers = [gene for gene in markers if gene in cluster_expression.index]
 
             if valid_markers:
-                scores[cell_type] = len(valid_markers)
+                # Calculate the mean expression of the marker genes for the cluster
+                mean_expression = cluster_expression.loc[valid_markers].mean(axis=1).sum()
+                scores[cell_type] = mean_expression
 
         # Assign the cell type with the highest score
         if scores:
@@ -217,13 +235,44 @@ def marker_based_assignment(cluster_results, marker_reference):
         else:
             cluster_scores[cluster] = None
 
-    # Create the results DataFrame, ensuring the alignment with barcodes
+    # Create the results DataFrame, ensuring alignment with barcodes
     results_df = pd.DataFrame({
-        'barcode': cluster_results.index,  # Align with barcode index
+        'barcode': cluster_results.index,
         'cluster': cluster_results.values,
         'celltype': [cluster_scores[cluster] for cluster in cluster_results.values]
     })
 
     return results_df
+
+
+def visualize_cells(reduced_data, title, cell_assignment_results):
+    """
+    Visualize the results of clustering with cell type labels.
+
+    Parameters:
+    - reduced_data (pd.DataFrame): Dimensionality reduced data (e.g., PCA or t-SNE).
+    - title (str): Title for the plot.
+    - cell_assignment_results (pd.DataFrame): DataFrame containing 'barcode', 'cluster', and 'celltype'.
+    """
+    plt.figure(figsize=(12, 10))
+
+    # Extract labels (cell types) from cell assignment results
+    cell_assignment_results = cell_assignment_results.set_index('barcode')
+    labels = cell_assignment_results['celltype']
+
+    unique_labels = labels.unique()
+    for label in unique_labels:
+        # Filter reduced data points based on the barcode and label
+        subset = reduced_data.loc[cell_assignment_results.index[labels == label]]
+        plt.scatter(subset.iloc[:, 0], subset.iloc[:, 1],
+                    label=label, alpha=0.6, s=15)
+
+    plt.title(title)
+    plt.legend(title='Cell Types', loc='upper right', bbox_to_anchor=(1.25, 1))
+    plt.xlabel(reduced_data.columns[0])
+    plt.ylabel(reduced_data.columns[1])
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
 
 
