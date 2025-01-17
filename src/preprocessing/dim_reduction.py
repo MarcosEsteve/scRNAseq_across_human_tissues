@@ -6,27 +6,6 @@ from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 
 
-def apply_pca_no_optim(expression_matrix, n_components=50):
-    """
-    Apply PCA to the expression matrix.
-
-    Parameters:
-    - expression_matrix (pd.DataFrame): A pandas SparseDataFrame where rows are genes and columns are cells.
-    - n_components (int): Number of principal components to retain.
-
-    Returns:
-    - pd.DataFrame: PCA-transformed data with cells as rows and PCs as columns.
-    """
-    pca = PCA(n_components=n_components)
-    pca_result = pca.fit_transform(expression_matrix.T.sparse.to_dense())
-    pca_df = pd.DataFrame(
-        pca_result,
-        index=expression_matrix.columns,
-        columns=[f'PC_{i + 1}' for i in range(n_components)]
-    )
-    return pca, pca_df
-
-
 def apply_pca(expression_matrix, threshold=0.5):
     """
     Apply PCA to the expression matrix, then select the optimal number of components

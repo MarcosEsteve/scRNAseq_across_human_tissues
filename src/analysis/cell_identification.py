@@ -128,8 +128,8 @@ def reference_based_assignment(expression_matrix_processed, cluster_results, exp
         lambda group: expression_matrix_processed_filtered.loc[:, group.index].mean(axis=1)
     ).unstack()  # unstack to make it (genes x clusters)
 
-    # Step 4: Calculate the distance between each cluster profile and each reference cell type profile
-    distances = cdist(cluster_profiles.values, expression_profile_filtered.T.values, metric="correlation")
+    # Calculate the distance between each cluster profile and each reference cell type profile
+    distances = cdist(cluster_profiles.values, expression_profile_filtered.T.values, metric="euclidean")
 
     # Assign cell types to each cluster based on the closest profile
     assigned_cell_types = expression_profile_filtered.columns[np.argmin(distances, axis=1)]

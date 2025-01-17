@@ -12,7 +12,7 @@ import src.analysis.cell_identification as cell_identification
 import src.evaluation.evaluation as evaluation
 
 
-def load_expression_data_from_mtx(path, n_sample=None, random_state=None):
+def load_expression_data_from_mtx(path, barcodes_labeled=None, n_sample=None, random_state=None):
     """
     Load gene expression data from MTX format into a sparse DataFrame.
 
@@ -30,6 +30,16 @@ def load_expression_data_from_mtx(path, n_sample=None, random_state=None):
 
     # Load barcodes
     barcodes = pd.read_csv(path+"barcodes.tsv", header=None, sep='\t', names=['barcode'])
+
+    # Filter by labeled barcodes if barcodes_labeled is provided
+    if barcodes_labeled is not None:
+        if 'barcode' not in barcodes_labeled.columns:
+            raise ValueError("The provided barcodes_labeled DataFrame must contain a 'barcode' column.")
+        # Find the intersection of barcodes
+        labeled_barcodes = set(barcodes_labeled['barcode'])
+        matching_indices = barcodes['barcode'].isin(labeled_barcodes)
+        matrix = matrix[:, matching_indices]
+        barcodes = barcodes[matching_indices]
 
     # Apply random sampling to barcodes if n_sample is specified
     if n_sample is not None and n_sample < len(barcodes):
@@ -117,7 +127,8 @@ def save_results(pipeline_id, cell_identification_results, internal_metrics,
     # Create a new row with the results of the pipeline
     result_row = {
         'pipeline_id': pipeline_id,  # Unique identifier for the pipeline
-        'barcodes': ','.join(cell_identification_results['barcode'].tolist()),  # Convert the barcode list to a comma-separated string
+        'barcodes': ','.join(cell_identification_results['barcode'].tolist()),
+        # Convert the barcode list to a comma-separated string
         'clusters': ','.join(map(str, cell_identification_results['cluster'].tolist())),  # Convert clusters to string
         'cell_types': ','.join(cell_identification_results['celltype'].tolist()),  # Convert cell types to string
         'ARI': internal_metrics['ARI'],
@@ -191,7 +202,7 @@ def execute_step(step_name, methods_dict, method_name, data, extra_params=None):
     method_func = methods_dict[method_name]
     print(f"Running {step_name} - {method_name}")
     if extra_params:
-        result = method_func(data, **extra_params) # If the function needs extra_params, call it with them
+        result = method_func(data, **extra_params)  # If the function needs extra_params, call it with them
     else:
         result = method_func(data)  # Else, no extra_params is needed
     return result
@@ -230,8 +241,8 @@ clustering_methods = {
     'HC': {'func': clustering.hierarchical_clustering, 'params': {'n_clusters': 5}},
     'DLC': {'func': clustering.deep_learning_clustering, 'params': {'n_clusters': 10, 'encoding_dim': 32}},
     'APC': {'func': clustering.affinity_propagation_clustering, 'params': None},
-    'MMC': {'func': clustering.mixture_model_clustering, 'params': {'n_components': None}},  # n_components is chosen from previous step
-    'EC': {'func': clustering.ensemble_clustering, 'params': {'n_estimators': 10}},
+    'MMC': {'func': clustering.mixture_model_clustering, 'params': {'n_components': 10}},  # n_components is n_clusters
+    'EC': {'func': clustering.ensemble_clustering, 'params': {'n_clusters': 10, 'eps': 0.5, 'min_samples': 5}},
 }
 
 cell_identification_methods = {
@@ -240,63 +251,68 @@ cell_identification_methods = {
     'MBA': cell_identification.marker_based_assignment,
 }
 
-metadata_path = "./data/PBMC/PBMC_68k/hg19/68_pbmc_barcodes_annotation.tsv"
 
 
 ### Main Pipeline ###
-#this is done for PBMC, I have to replicate it for the other tissues
-expression_matrix = load_expression_data_from_mtx("../data/PBMC/PBMC_68k/hg19/")
-true_labels = evaluation.load_true_labels(metadata_path, "barcodes", "celltype", "\t")
+# Change params of dictionaries if needed
+tissue = 'PBMC'
+metadata_path = "./data/PBMC/PBMC_68k/hg19/68_pbmc_barcodes_annotation.tsv"
+
+celltype_column = 'celltype'
+true_labels = evaluation.load_true_labels(metadata_path, 'barcodes', celltype_column, "\t")
+
+expression_matrix = load_expression_data_from_mtx("../data/PBMC/PBMC_68k/hg19/", barcodes_labeled=true_labels)
 
 print(expression_matrix.info())
 
-"""
 for cleaning_method in data_cleaning_methods.keys():
-    cleaned_data = execute_step('data_cleaning', data_cleaning_methods, cleaning_method, expression_matrix)
+    cleaned_matrix = execute_step('data_cleaning', data_cleaning_methods, cleaning_method, expression_matrix)
 
     for norm_method in normalization_methods.keys():
-        normalized_data = execute_step('normalization', normalization_methods, norm_method, cleaned_data)
+        normalized_matrix = execute_step('normalization', normalization_methods, norm_method, cleaned_matrix)
 
         for fs_method in feature_selection_methods.keys():
-            selected_features = execute_step('feature_selection', feature_selection_methods, fs_method, normalized_data)
+            selected_matrix = execute_step('feature_selection', feature_selection_methods, fs_method, normalized_matrix)
 
             for dr_method in dim_reduction_methods.keys():
-                # Execution of PCA no matter the dr_method selected
-                reduced_data = execute_step('dim_reduction', dim_reduction_methods, 'PCA',
-                                            selected_features)
-                optimal_num_dimensions = reduced_data.shape[1]  # Get the number of components (columns)
-                # If dr_method == 'PCA', continue
-                # Else run the dr_method using the number of optimal components extracted from PCA
-                if dr_method is not 'PCA':
-                    # ejecutar el dim reduction method correspondiente con el numero optimo de dimensiones
-                    extra_params = {'n_components': optimal_num_dimensions}
-                    reduced_data = execute_step('dim_reduction', dim_reduction_methods, dr_method,
-                                                selected_features, extra_params)
+                # If tSNE, execute with predefined 2 dimensions
+                if dr_method is 'TSNE':
+                    reduced_matrix = execute_step('dim_reduction', dim_reduction_methods, dr_method,
+                                 selected_matrix)
+                else:  # PCA or UMAP
+                    # Execute PCA
+                    pca_object, reduced_matrix = execute_step('dim_reduction', dim_reduction_methods, 'PCA',
+                                                            selected_matrix)
+                    # If dr_method == PCA, continue, this step is already done
+                    # else, if dr_method == UMAP, execute umap with the same number of dimensions as PCA
+                    if dr_method is 'UMAP':
+                        optimal_num_dimensions = reduced_matrix.shape[1]  # Get the number of components (columns)
+                        reduced_matrix = execute_step('dim_reduction', dim_reduction_methods, dr_method,
+                                                    selected_matrix, optimal_num_dimensions)
 
                 for cluster_method, cluster_config in clustering_methods.items():
-                    # Mixture model clustering requires num of components (dimensions), we take the optimal from previous step
-                    if cluster_method == 'mixture_model_clustering':
-                        cluster_config['params']['n_components'] = optimal_num_dimensions
-
-                    clustering_results = execute_step('clustering', clustering_methods, cluster_method, reduced_data,
+                    clustering_results = execute_step('clustering', clustering_methods, cluster_method, reduced_matrix,
                                                       cluster_config['params'])
 
                     for cell_id_method in cell_identification_methods.keys():
                         if cell_id_method == 'marker_based_assignment':
-                            reference = cell_identification.generate_marker_reference()
+                            reference = cell_identification.generate_marker_reference(expression_matrix, metadata_path, celltype_column=celltype_column, sep='\t')
+                            key = 'reference_marker'
                         else:
-                            reference = cell_identification.generate_expression_profiles()
-                            
-                        
+                            reference = cell_identification.generate_expression_profiles(expression_matrix, metadata_path, celltype_column=celltype_column, sep='\t')
+                            key = 'expression_profile'
+
+                        extra_params = {'cluster_results': clustering_results, key: reference}
+
                         cell_identification_results = execute_step(
-                            'cell_identification', cell_identification_methods, cell_id_method, clustering_results, reference
+                            'cell_identification', cell_identification_methods, cell_id_method, selected_matrix, extra_params
                         )
 
                         # Internal Evaluation
-                        internal_metrics = evaluation.internal_evaluation(reduced_data, cell_identification_results)
+                        internal_metrics = evaluation.internal_evaluation(reduced_matrix, cell_identification_results)
 
                         # External Evaluation
-                        external_metrics = evaluation.external_evaluation(cell_identification_results, true_labels_df)
+                        external_metrics = evaluation.external_evaluation(cell_identification_results, true_labels)
 
                         # Generate unique pipeline identifier
                         pipeline_id = generate_pipeline_id([
@@ -306,13 +322,12 @@ for cleaning_method in data_cleaning_methods.keys():
                         # Save results
                         save_results(
                             pipeline_id=pipeline_id,
-                            barcodes=expression_matrix.columns,
-                            clustering_results=clustering_results,
                             cell_identification_results=cell_identification_results,
                             internal_metrics=internal_metrics,
-                            external_metrics=external_metrics
+                            external_metrics=external_metrics,
+                            reduced_matrix=reduced_matrix,
+                            tissue=tissue
                         )
                         print(f"Results saved for pipeline: {pipeline_id}")
 
-print("Finish!")"""
-
+print("Finish!")

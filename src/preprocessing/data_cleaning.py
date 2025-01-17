@@ -1,6 +1,5 @@
-import numpy as np
 import pandas as pd
-from scipy.sparse import csc_matrix, diags
+from scipy.sparse import csc_matrix
 
 
 def remove_duplicated_genes(expression_matrix):
@@ -35,14 +34,11 @@ def filter_lowly_expressed_genes(expression_matrix, min_cells=3):
         Returns:
         - pd.DataFrame: A filtered SparseDataFrame with only genes expressed in at least 'min_cells' cells.
     """
-    # Remove duplicate genes by averaging their expression
-    deduplicated_matrix = remove_duplicated_genes(expression_matrix)
-
     # Count the number of cells in which each gene is expressed
-    expressed_cells = (deduplicated_matrix > 0).sum(axis=1)
+    expressed_cells = (expression_matrix > 0).sum(axis=1)
 
     # Filter genes that are expressed in at least 'min_cells' cells
-    filtered_matrix = deduplicated_matrix.loc[expressed_cells >= min_cells]
+    filtered_matrix = expression_matrix.loc[expressed_cells >= min_cells]
 
     return filtered_matrix
 
@@ -62,21 +58,18 @@ def filter_high_mitochondrial_content(expression_matrix, max_mito_pct=0.1):
     Returns:
     - pd.DataFrame: A filtered SparseDataFrame with cells having mitochondrial content below the specified threshold.
     """
-    # Remove duplicate genes by averaging their expression
-    deduplicated_matrix = remove_duplicated_genes(expression_matrix)
-
     # Identify mitochondrial genes (assuming gene symbols start with 'MT-')
-    mito_genes = deduplicated_matrix.index.str.startswith('MT-')
+    mito_genes = expression_matrix.index.str.startswith('MT-')
 
     # Calculate mitochondrial expression and total expression per cell
-    mito_expression = deduplicated_matrix.loc[mito_genes].sum(axis=0)
-    total_expression = deduplicated_matrix.sum(axis=0)
+    mito_expression = expression_matrix.loc[mito_genes].sum(axis=0)
+    total_expression = expression_matrix.sum(axis=0)
 
     # Calculate the mitochondrial percentage per cell
     mito_pct = mito_expression / total_expression
 
     # Filter cells with mitochondrial content above the threshold
-    filtered_matrix = deduplicated_matrix.loc[:, mito_pct <= max_mito_pct]
+    filtered_matrix = expression_matrix.loc[:, mito_pct <= max_mito_pct]
 
     return filtered_matrix
 
@@ -92,11 +85,8 @@ def filter_doublets_cxds(expression_matrix, threshold=0.9):
     Returns:
     - pd.DataFrame: A filtered SparseDataFrame with potential doublets removed.
     """
-    # Remove duplicate genes by averaging their expression
-    deduplicated_matrix = remove_duplicated_genes(expression_matrix)
-
     # Binarize the expression matrix: Convert the sparse DataFrame to binary (0 or 1)
-    binarized_matrix = (deduplicated_matrix > 0).astype(int)
+    binarized_matrix = (expression_matrix > 0).astype(int)
 
     # Convert the binarized matrix to a scipy sparse matrix (csc_matrix)
     binarized_matrix_sparse = csc_matrix(binarized_matrix)
@@ -118,7 +108,7 @@ def filter_doublets_cxds(expression_matrix, threshold=0.9):
     non_doublets = doublet_scores.A1 <= threshold  # .A1 flattens the sparse matrix to a 1D array
 
     # Filter the original expression matrix to keep only non-doublets
-    filtered_matrix = deduplicated_matrix.loc[:, non_doublets]
+    filtered_matrix = expression_matrix.loc[:, non_doublets]
 
     return filtered_matrix
 
