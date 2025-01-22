@@ -19,7 +19,7 @@ def apply_pca(expression_matrix, threshold=0.5):
     - pd.DataFrame: PCA-transformed data with cells as rows and selected PCs as columns.
     """
     # Apply PCA with all components
-    pca = PCA()
+    pca = PCA(n_components=50)
     pca_result = pca.fit_transform(expression_matrix.T.sparse.to_dense())
 
     n_components = select_pca_components(pca, std_threshold=threshold)
@@ -65,9 +65,6 @@ def apply_tsne(expression_matrix, n_components=2):
     Returns:
     - pd.DataFrame: t-SNE-transformed data with cells as rows and t-SNE dimensions as columns.
     """
-    # Limit the number of components to 20 to avoid computational running increase
-    n_components = min(n_components, 20)
-
     tsne = TSNE(n_components=n_components)
     tsne_result = tsne.fit_transform(expression_matrix.T.sparse.to_dense())
     return pd.DataFrame(tsne_result, index=expression_matrix.columns,

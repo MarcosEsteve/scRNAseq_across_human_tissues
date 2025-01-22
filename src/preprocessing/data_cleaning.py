@@ -1,5 +1,6 @@
 import pandas as pd
-from scipy.sparse import csc_matrix
+import numpy as np
+from scipy.sparse import csc_matrix, csr_matrix
 
 
 def remove_duplicated_genes(expression_matrix):
@@ -34,13 +35,24 @@ def filter_lowly_expressed_genes(expression_matrix, min_cells=3):
         Returns:
         - pd.DataFrame: A filtered SparseDataFrame with only genes expressed in at least 'min_cells' cells.
     """
-    # Count the number of cells in which each gene is expressed
-    expressed_cells = (expression_matrix > 0).sum(axis=1)
+    # Convert the SparseDataFrame to a sparse CSC matrix for column-wise operations
+    sparse_matrix = csr_matrix(expression_matrix.sparse.to_coo())
 
-    # Filter genes that are expressed in at least 'min_cells' cells
-    filtered_matrix = expression_matrix.loc[expressed_cells >= min_cells]
+    # Count the number of cells in which each gene is expressed (non-zero entries)
+    expressed_cells = (sparse_matrix > 0).sum(axis=1).A1  # .A1 converts the result to a 1D array
 
-    return filtered_matrix
+    # Find the indices of genes expressed in at least 'min_cells' cells
+    valid_genes = expressed_cells >= min_cells
+
+    # Filter the matrix to keep only the valid genes (rows)
+    filtered_sparse_matrix = sparse_matrix[valid_genes, :]
+
+    # Convert back to pandas SparseDataFrame
+    filtered_expression_matrix = pd.DataFrame.sparse.from_spmatrix(filtered_sparse_matrix)
+    filtered_expression_matrix.index = expression_matrix.index[valid_genes]
+    filtered_expression_matrix.columns = expression_matrix.columns
+
+    return filtered_expression_matrix
 
 
 def filter_high_mitochondrial_content(expression_matrix, max_mito_pct=0.1):
@@ -74,38 +86,46 @@ def filter_high_mitochondrial_content(expression_matrix, max_mito_pct=0.1):
     return filtered_matrix
 
 
-def filter_doublets_cxds(expression_matrix, threshold=0.9):
+def filter_doublets_cxds(expression_matrix, threshold=0.9, block_size=10000):
     """
     Detect Doublets using Co-expression Based Doublet Scoring (cxds)
 
     Parameters:
     - expression_matrix (pd.DataFrame): A pandas SparseDataFrame where rows represent genes and columns represent cells.
     - threshold (float): Threshold for doublet classification. Default is 0.9.
+    - block_size (int): Number of cells to process in each block to reduce memory usage.
 
     Returns:
     - pd.DataFrame: A filtered SparseDataFrame with potential doublets removed.
     """
-    # Binarize the expression matrix: Convert the sparse DataFrame to binary (0 or 1)
-    binarized_matrix = (expression_matrix > 0).astype(int)
+    # Convert the SparseDataFrame to a sparse CSC matrix
+    binarized_matrix_sparse = csc_matrix((expression_matrix > 0).sparse.to_coo())
 
-    # Convert the binarized matrix to a scipy sparse matrix (csc_matrix)
-    binarized_matrix_sparse = csc_matrix(binarized_matrix)
+    n_cells = binarized_matrix_sparse.shape[1]
+    diagonal = np.zeros(n_cells)  # To store co-expression with itself
+    gene_pair_sums = np.zeros(n_cells)  # To store row-wise sums
 
-    # Calculate co-expression scores (this will be a square matrix of size #cells x #cells)
-    gene_pairs = binarized_matrix_sparse.T.dot(binarized_matrix_sparse)
+    # Process in blocks to reduce memory usage
+    for start_idx in range(0, n_cells, block_size):
+        end_idx = min(start_idx + block_size, n_cells)
+        block = binarized_matrix_sparse[:, start_idx:end_idx]  # Select block of cells
 
-    # Get the diagonal elements (co-expression of each cell with itself)
-    diagonal = gene_pairs.diagonal()
+        # Co-expression scores for the block
+        block_gene_pairs = binarized_matrix_sparse.T.dot(block)
 
-    # Sum the co-expression matrix along the rows (axis=0)
-    gene_pair_sums = gene_pairs.sum(axis=0)
+        # Update diagonal (self-coexpression for cells in the block)
+        diagonal[start_idx:end_idx] = block_gene_pairs.diagonal()
+
+        # Update row sums
+        gene_pair_sums[start_idx:end_idx] = block_gene_pairs.sum(axis=0).A1
 
     # Compute doublet scores
     doublet_scores = (gene_pair_sums - diagonal) / (
-                binarized_matrix_sparse.shape[1] * (binarized_matrix_sparse.shape[1] - 1) / 2)
+        binarized_matrix_sparse.shape[1] * (binarized_matrix_sparse.shape[1] - 1) / 2
+    )
 
     # Identify non-doublets (thresholding the scores)
-    non_doublets = doublet_scores.A1 <= threshold  # .A1 flattens the sparse matrix to a 1D array
+    non_doublets = doublet_scores <= threshold
 
     # Filter the original expression matrix to keep only non-doublets
     filtered_matrix = expression_matrix.loc[:, non_doublets]

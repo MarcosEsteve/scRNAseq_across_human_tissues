@@ -96,13 +96,15 @@ def load_expression_data_from_csv(csv_path, chunk_size=10000):
     return expression_matrix
 
 
-def save_results(pipeline_id, cell_identification_results, internal_metrics,
+def save_results(results_path, pipeline_id, cell_identification_results, internal_metrics,
                  external_metrics, reduced_matrix, tissue):
     """
         Save the results of the pipeline including clustering, cell identification, and metrics.
 
         Parameters:
         -----------
+        results_path : str
+            Folder to save the results in.
         pipeline_id : str
             Unique identifier for the pipeline configuration.
         cell_identification_results : pd.DataFrame
@@ -117,7 +119,7 @@ def save_results(pipeline_id, cell_identification_results, internal_metrics,
             Name of the tissue analyzed (e.g. PBMC).
         """
     # Create the results folder for the tissue if it doesn't exist
-    tissue_results_path = f'results/{tissue}_results'
+    tissue_results_path = f'{results_path}/{tissue}_results'
     os.makedirs(tissue_results_path, exist_ok=True)
 
     # Create the reduced matrix folder for the tissue if it doesn't exist
@@ -127,8 +129,7 @@ def save_results(pipeline_id, cell_identification_results, internal_metrics,
     # Create a new row with the results of the pipeline
     result_row = {
         'pipeline_id': pipeline_id,  # Unique identifier for the pipeline
-        'barcodes': ','.join(cell_identification_results['barcode'].tolist()),
-        # Convert the barcode list to a comma-separated string
+        'barcodes': ','.join(cell_identification_results['barcode'].tolist()),  # Convert the barcode list to a comma-separated string
         'clusters': ','.join(map(str, cell_identification_results['cluster'].tolist())),  # Convert clusters to string
         'cell_types': ','.join(cell_identification_results['celltype'].tolist()),  # Convert cell types to string
         'ARI': internal_metrics['ARI'],
@@ -199,12 +200,20 @@ def execute_step(step_name, methods_dict, method_name, data, extra_params=None):
     result : pd.DataFrame or pd.Series
         The result of the executed method.
     """
-    method_func = methods_dict[method_name]
+    method_entry = methods_dict[method_name]
+    # Check if the dictionary contains a direct function or a sub-dictionary
+    if callable(method_entry):  # Direct function
+        method_func = method_entry
+    else:  # Sub-dictionary with 'func' and 'params'
+        method_func = method_entry['func']
+
     print(f"Running {step_name} - {method_name}")
+
     if extra_params:
         result = method_func(data, **extra_params)  # If the function needs extra_params, call it with them
     else:
         result = method_func(data)  # Else, no extra_params is needed
+    print(f"Execution of {step_name} - {method_name} done")
     return result
 
 
@@ -237,12 +246,12 @@ dim_reduction_methods = {
 clustering_methods = {
     'GBC': {'func': clustering.graph_based_clustering_leiden, 'params': {'resolution': 1}},
     'DeBC': {'func': clustering.density_based_clustering, 'params': {'eps': 0.5, 'min_samples': 5}},
-    'DiBC': {'func': clustering.distance_based_clustering, 'params': {'n_clusters': 10}},
-    'HC': {'func': clustering.hierarchical_clustering, 'params': {'n_clusters': 5}},
-    'DLC': {'func': clustering.deep_learning_clustering, 'params': {'n_clusters': 10, 'encoding_dim': 32}},
+    'DiBC': {'func': clustering.distance_based_clustering, 'params': {'n_clusters': 11}},
+    'HC': {'func': clustering.hierarchical_clustering, 'params': {'n_clusters': 11}},
+    'DLC': {'func': clustering.deep_learning_clustering, 'params': {'n_clusters': 11, 'encoding_dim': 32}},
     'APC': {'func': clustering.affinity_propagation_clustering, 'params': None},
-    'MMC': {'func': clustering.mixture_model_clustering, 'params': {'n_components': 10}},  # n_components is n_clusters
-    'EC': {'func': clustering.ensemble_clustering, 'params': {'n_clusters': 10, 'eps': 0.5, 'min_samples': 5}},
+    'MMC': {'func': clustering.mixture_model_clustering, 'params': {'n_components': 11}},  # n_components is n_clusters
+    'EC': {'func': clustering.ensemble_clustering, 'params': {'n_clusters': 11, 'eps': 0.5, 'min_samples': 5}},
 }
 
 cell_identification_methods = {
@@ -256,7 +265,8 @@ cell_identification_methods = {
 ### Main Pipeline ###
 # Change params of dictionaries if needed
 tissue = 'PBMC'
-metadata_path = "./data/PBMC/PBMC_68k/hg19/68_pbmc_barcodes_annotation.tsv"
+metadata_path = "../data/PBMC/PBMC_68k/hg19/68k_pbmc_barcodes_annotation.tsv"
+results_path = "../results"
 
 celltype_column = 'celltype'
 true_labels = evaluation.load_true_labels(metadata_path, 'barcodes', celltype_column, "\t")
@@ -276,7 +286,7 @@ for cleaning_method in data_cleaning_methods.keys():
 
             for dr_method in dim_reduction_methods.keys():
                 # If tSNE, execute with predefined 2 dimensions
-                if dr_method is 'TSNE':
+                if dr_method == 'TSNE':
                     reduced_matrix = execute_step('dim_reduction', dim_reduction_methods, dr_method,
                                  selected_matrix)
                 else:  # PCA or UMAP
@@ -285,7 +295,7 @@ for cleaning_method in data_cleaning_methods.keys():
                                                             selected_matrix)
                     # If dr_method == PCA, continue, this step is already done
                     # else, if dr_method == UMAP, execute umap with the same number of dimensions as PCA
-                    if dr_method is 'UMAP':
+                    if dr_method == 'UMAP':
                         optimal_num_dimensions = reduced_matrix.shape[1]  # Get the number of components (columns)
                         reduced_matrix = execute_step('dim_reduction', dim_reduction_methods, dr_method,
                                                     selected_matrix, optimal_num_dimensions)
@@ -295,9 +305,11 @@ for cleaning_method in data_cleaning_methods.keys():
                                                       cluster_config['params'])
 
                     for cell_id_method in cell_identification_methods.keys():
-                        if cell_id_method == 'marker_based_assignment':
+                        # For marker_based_assignment, marker reference is needed
+                        if cell_id_method == 'MBA':
                             reference = cell_identification.generate_marker_reference(expression_matrix, metadata_path, celltype_column=celltype_column, sep='\t')
-                            key = 'reference_marker'
+                            key = 'marker_reference'
+                        # For the other 2 methods, expression_profile is needed
                         else:
                             reference = cell_identification.generate_expression_profiles(expression_matrix, metadata_path, celltype_column=celltype_column, sep='\t')
                             key = 'expression_profile'
@@ -321,6 +333,7 @@ for cleaning_method in data_cleaning_methods.keys():
 
                         # Save results
                         save_results(
+                            results_path=results_path,
                             pipeline_id=pipeline_id,
                             cell_identification_results=cell_identification_results,
                             internal_metrics=internal_metrics,
@@ -328,6 +341,5 @@ for cleaning_method in data_cleaning_methods.keys():
                             reduced_matrix=reduced_matrix,
                             tissue=tissue
                         )
-                        print(f"Results saved for pipeline: {pipeline_id}")
 
 print("Finish!")
