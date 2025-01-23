@@ -22,12 +22,14 @@ def graph_based_clustering_leiden(data, resolution=1.0, n_iterations=2):
     - pd.Series: Cluster labels for each cell.
     """
     # Construct k-nearest neighbors graph
-    nn = NearestNeighbors(n_neighbors=15, metric='euclidean')
+    nn = NearestNeighbors(n_neighbors=30, metric='euclidean')
     nn.fit(data)
     adj_matrix = nn.kneighbors_graph(data, mode='distance')
 
-    # Convert to igraph
-    i_graph = ig.Graph.Weighted_Adjacency(adj_matrix.toarray().tolist())
+    # Convert to igraph directly from the sparse matrix
+    sources, targets = adj_matrix.nonzero()  # Extract edges
+    weights = adj_matrix.data  # Edge weights
+    i_graph = ig.Graph(edges=list(zip(sources, targets)), edge_attrs={"weight": weights})
 
     # Apply Leiden clustering
     partition = la.find_partition(i_graph, la.RBConfigurationVertexPartition,
@@ -73,20 +75,45 @@ def distance_based_clustering(data, n_clusters=10):
     return pd.Series(labels, index=data.index)
 
 
-def hierarchical_clustering(data, n_clusters=10):
+def hierarchical_clustering(data, n_clusters=10, sample_fraction=0.1, random_state=6):
     """
-    Perform hierarchical clustering.
+    Perform hierarchical clustering. Agglomerative Clustering on a subsample and assign remaining points using k-NN.
 
     Parameters:
-    - data (pd.DataFrame): Dimensionality-reduced data.
-    - n_clusters (int): The number of clusters to form.
+    - data (pd.DataFrame): Dimensionality-reduced data (cells as rows, features as columns).
+    - n_clusters (int): Number of clusters to form.
+    - sample_fraction (float): Fraction of cells to use for clustering.
+    - random_state (int): Random seed for reproducibility.
 
     Returns:
-    - pd.Series: Cluster labels for each cell.
+    - pd.Series: Cluster labels for all cells.
     """
-    hierarchical = AgglomerativeClustering(n_clusters=n_clusters)
-    labels = hierarchical.fit_predict(data)
-    return pd.Series(labels, index=data.index)
+    # Step 1: Subsampling
+    np.random.seed(random_state)
+    sampled_indices = np.random.choice(data.index, size=int(len(data) * sample_fraction), replace=False)
+    sampled_data = data.loc[sampled_indices]
+
+    # Step 2: Agglomerative Clustering on the subsample
+    agglomerative = AgglomerativeClustering(n_clusters=n_clusters)
+    sampled_labels = agglomerative.fit_predict(sampled_data)
+
+    # Step 3: Assign remaining cells using k-NN
+    remaining_indices = data.index.difference(sampled_indices)
+    remaining_data = data.loc[remaining_indices]
+
+    knn = NearestNeighbors(n_neighbors=5)  # You can adjust the number of neighbors
+    knn.fit(sampled_data)
+    distances, neighbors = knn.kneighbors(remaining_data)
+
+    # Assign each point to the most common cluster among its neighbors
+    remaining_labels = np.array([np.bincount(sampled_labels[neighbors[i]]).argmax() for i in range(len(remaining_data))])
+
+    # Combine labels
+    labels = pd.Series(index=data.index, dtype=int)
+    labels.loc[sampled_indices] = sampled_labels
+    labels.loc[remaining_indices] = remaining_labels
+
+    return labels
 
 
 def deep_learning_clustering(data, n_clusters=10, encoding_dim=32):

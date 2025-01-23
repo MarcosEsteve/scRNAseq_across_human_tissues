@@ -70,20 +70,36 @@ def filter_high_mitochondrial_content(expression_matrix, max_mito_pct=0.1):
     Returns:
     - pd.DataFrame: A filtered SparseDataFrame with cells having mitochondrial content below the specified threshold.
     """
-    # Identify mitochondrial genes (assuming gene symbols start with 'MT-')
-    mito_genes = expression_matrix.index.str.startswith('MT-')
+    # Convert the SparseDataFrame to a sparse CSC matrix for efficient column-wise operations
+    sparse_matrix = csc_matrix(expression_matrix.sparse.to_coo())
 
-    # Calculate mitochondrial expression and total expression per cell
-    mito_expression = expression_matrix.loc[mito_genes].sum(axis=0)
-    total_expression = expression_matrix.sum(axis=0)
+    # Identify mitochondrial genes (assuming gene symbols start with 'MT-')
+    mito_genes_mask = expression_matrix.index.str.startswith('MT-')
+    mito_indices = np.where(mito_genes_mask)[0]  # Indices of mitochondrial genes
+
+    # Calculate mitochondrial expression per cell (sum of rows corresponding to mitochondrial genes)
+    mito_expression = sparse_matrix[mito_indices, :].sum(axis=0).A1  # .A1 converts to 1D array
+
+    # Calculate total expression per cell (sum of all rows)
+    total_expression = sparse_matrix.sum(axis=0).A1
 
     # Calculate the mitochondrial percentage per cell
     mito_pct = mito_expression / total_expression
 
-    # Filter cells with mitochondrial content above the threshold
-    filtered_matrix = expression_matrix.loc[:, mito_pct <= max_mito_pct]
+    # Find the indices of cells with mitochondrial content below the threshold
+    valid_cells = mito_pct <= max_mito_pct
 
-    return filtered_matrix
+    # Filter the matrix to keep only valid cells (columns)
+    filtered_sparse_matrix = sparse_matrix[:, valid_cells]
+
+    # Convert back to pandas SparseDataFrame
+    filtered_expression_matrix = pd.DataFrame.sparse.from_spmatrix(
+        filtered_sparse_matrix,
+        index=expression_matrix.index,
+        columns=expression_matrix.columns[valid_cells]
+    )
+
+    return filtered_expression_matrix
 
 
 def filter_doublets_cxds(expression_matrix, threshold=0.9, block_size=10000):
@@ -119,13 +135,19 @@ def filter_doublets_cxds(expression_matrix, threshold=0.9, block_size=10000):
         # Update row sums
         gene_pair_sums[start_idx:end_idx] = block_gene_pairs.sum(axis=0).A1
 
-    # Compute doublet scores
-    doublet_scores = (gene_pair_sums - diagonal) / (
-        binarized_matrix_sparse.shape[1] * (binarized_matrix_sparse.shape[1] - 1) / 2
-    )
+    # Compute total co-expression for each cell
+    coexpression_scores = gene_pair_sums / np.sum(binarized_matrix_sparse, axis=0).A1
+
+    # Calculate doublet scores using co-expression difference and normalized by max score
+    doublet_scores = (coexpression_scores - diagonal) / coexpression_scores.max()
+
+    print(doublet_scores.min(), doublet_scores.max(), doublet_scores.mean())
+
+    # Calculate dynamic threshold to remove top X% of cells
+    dynamic_threshold = np.percentile(doublet_scores, 100 * (1 - threshold))
 
     # Identify non-doublets (thresholding the scores)
-    non_doublets = doublet_scores <= threshold
+    non_doublets = doublet_scores <= dynamic_threshold
 
     # Filter the original expression matrix to keep only non-doublets
     filtered_matrix = expression_matrix.loc[:, non_doublets]
