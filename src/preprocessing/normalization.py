@@ -20,6 +20,7 @@ def normalize_cpm(expression_matrix):
     """
     # Convert the SparseDataFrame to a sparse CSC matrix
     sparse_matrix = csc_matrix(expression_matrix.sparse.to_coo())
+    print(f"Non-zero elements before normalization: {sparse_matrix.nnz}")
 
     # Calculate total counts per cell (column-wise sum)
     total_counts = sparse_matrix.sum(axis=0).A1  # .A1 to convert to 1D array
@@ -29,6 +30,7 @@ def normalize_cpm(expression_matrix):
 
     # Scale counts to counts per million (element-wise division)
     cpm_matrix = sparse_matrix.multiply(1e6).multiply(total_counts_inv)
+    print(f"Non-zero elements after normalization: {cpm_matrix.nnz}")
 
     # Return the result as a SparseDataFrame
     return pd.DataFrame.sparse.from_spmatrix(cpm_matrix, index=expression_matrix.index,
@@ -50,6 +52,7 @@ def normalize_quantile_regression(expression_matrix):
     # Convert the SparseDataFrame to a sparse CSC matrix for column-wise operations
     sparse_matrix = csc_matrix(expression_matrix.sparse.to_coo())
     print(f"Non-zero elements before normalization: {sparse_matrix.nnz}")
+    print(sparse_matrix.min(), sparse_matrix.max(), sparse_matrix.mean())
 
     # Calculate library size for each cell
     library_size = sparse_matrix.sum(axis=0).A1  # Sum across rows for each column, returning a 1D array
@@ -64,11 +67,14 @@ def normalize_quantile_regression(expression_matrix):
     # Iterate through each gene (row in the sparse matrix)
     for i in range(sparse_matrix.shape[0]):
         # Extract the current row as a sparse matrix
-        sparse_row = sparse_matrix[i, :]
+        #sparse_row = sparse_matrix[i, :]
+        sparse_row = sparse_matrix.getrow(i)
 
         # Extract non-zero values and their indices
         y_data = sparse_row.data  # Non-zero values
+        #print(y_data)
         y_indices = sparse_row.indices  # Column indices of the non-zero values
+        #print(y_indices)
 
         if y_data.size > 0:
             # Log-transform the non-zero values
@@ -88,17 +94,16 @@ def normalize_quantile_regression(expression_matrix):
 
                 # Predict the adjusted values and apply normalization
                 predicted = res.predict(sm.add_constant(library_size_normalized[y_indices]))
+
                 final_normalized = y_normalized - predicted
 
                 # Convert back to the original scale
                 final_normalized = np.expm1(final_normalized * y_std + y_mean)
 
-                # Clip small negative values to a minimum threshold
-                final_normalized[final_normalized < 1e-10] = 1e-10
-
                 # Create a sparse row with the normalized values
                 sparse_row_normalized = csr_matrix((final_normalized, (np.zeros_like(y_indices), y_indices)),
                                                    shape=(1, sparse_matrix.shape[1]))
+
             else:
                 # If the standard deviation is zero, keep the original sparse row
                 sparse_row_normalized = sparse_row
@@ -112,6 +117,7 @@ def normalize_quantile_regression(expression_matrix):
     # Stack all normalized rows into a single sparse matrix
     normalized_matrix = csr_matrix(vstack(normalized_rows))
     print(f"Non-zero elements after normalization: {normalized_matrix.nnz}")
+    print(normalized_matrix.min(), normalized_matrix.max(), normalized_matrix.mean())
 
     # Release memory for large intermediate variables
     del sparse_matrix, normalized_rows
@@ -257,13 +263,15 @@ def normalize_negative_binomial(expression_matrix):
     """
     # Convert the SparseDataFrame to a sparse CSC matrix for column-wise operations
     sparse_matrix = csc_matrix(expression_matrix.sparse.to_coo())
+    print(f"Non-zero elements before normalization: {sparse_matrix.nnz}")
+    print(sparse_matrix.min(), sparse_matrix.max(), sparse_matrix.mean())
 
     # Create a list to store normalized rows
     normalized_rows = []
 
     for i in range(sparse_matrix.shape[0]):
         # Extract gene expression values as a sparse array for the current row (gene)
-        sparse_row = sparse_matrix[i, :]
+        sparse_row = sparse_matrix.getrow(i)
 
         # Extract non-zero values and their indices for the sparse row
         y_data = sparse_row.data  # Non-zero values
@@ -292,8 +300,11 @@ def normalize_negative_binomial(expression_matrix):
             # If gene is not expressed in any cell, append the original sparse row
             normalized_rows.append(sparse_row)
 
-        # Concatenate all rows (as sparse matrices) into a single sparse matrix
+    # Concatenate all rows (as sparse matrices) into a single sparse matrix
     sparse_matrix_normalized = csr_matrix(vstack(normalized_rows))
+
+    print(f"Non-zero elements after normalization: {sparse_matrix_normalized.nnz}")
+    print(sparse_matrix_normalized.min(), sparse_matrix_normalized.max(), sparse_matrix_normalized.mean())
 
     # Release memory for large intermediate variables
     del sparse_matrix, normalized_rows

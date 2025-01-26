@@ -92,11 +92,15 @@ def filter_high_mitochondrial_content(expression_matrix, max_mito_pct=0.1):
     # Filter the matrix to keep only valid cells (columns)
     filtered_sparse_matrix = sparse_matrix[:, valid_cells]
 
-    # Convert back to pandas SparseDataFrame
+    # Remove genes that have no expression in any of the valid cells
+    valid_genes_mask = filtered_sparse_matrix.getnnz(axis=1) > 0  # Get genes with non-zero expression in at least one valid cell
+    filtered_sparse_matrix = filtered_sparse_matrix[valid_genes_mask, :]
+
+    # Convert back to pandas SparseDataFrame with the correct indices
     filtered_expression_matrix = pd.DataFrame.sparse.from_spmatrix(
         filtered_sparse_matrix,
-        index=expression_matrix.index,
-        columns=expression_matrix.columns[valid_cells]
+        index=expression_matrix.index[valid_genes_mask],  # Correct gene indices
+        columns=expression_matrix.columns[valid_cells]  # Correct cell indices
     )
 
     return filtered_expression_matrix
@@ -141,16 +145,21 @@ def filter_doublets_cxds(expression_matrix, threshold=0.9, block_size=10000):
     # Calculate doublet scores using co-expression difference and normalized by max score
     doublet_scores = (coexpression_scores - diagonal) / coexpression_scores.max()
 
-    print(doublet_scores.min(), doublet_scores.max(), doublet_scores.mean())
-
     # Calculate dynamic threshold to remove top X% of cells
-    dynamic_threshold = np.percentile(doublet_scores, 100 * (1 - threshold))
+    dynamic_threshold = np.percentile(doublet_scores, 100 * threshold)
 
     # Identify non-doublets (thresholding the scores)
     non_doublets = doublet_scores <= dynamic_threshold
 
     # Filter the original expression matrix to keep only non-doublets
     filtered_matrix = expression_matrix.loc[:, non_doublets]
+
+    # Remove genes that have no expression in any of the non-doublet cells
+    # Use sparse matrix operations to avoid converting to dense
+    valid_genes_mask = filtered_matrix.sparse.to_coo().getnnz(axis=1) > 0  # Get non-zero expression for each gene
+
+    # Apply the gene filter directly to the sparse matrix
+    filtered_matrix = filtered_matrix.iloc[valid_genes_mask, :]
 
     return filtered_matrix
 
