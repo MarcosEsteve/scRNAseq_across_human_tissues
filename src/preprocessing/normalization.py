@@ -49,6 +49,7 @@ def normalize_quantile_regression(expression_matrix):
     """
     # Convert the SparseDataFrame to a sparse CSC matrix for column-wise operations
     sparse_matrix = csc_matrix(expression_matrix.sparse.to_coo())
+    print(f"Non-zero elements before normalization: {sparse_matrix.nnz}")
 
     # Calculate library size for each cell
     library_size = sparse_matrix.sum(axis=0).A1  # Sum across rows for each column, returning a 1D array
@@ -92,6 +93,9 @@ def normalize_quantile_regression(expression_matrix):
                 # Convert back to the original scale
                 final_normalized = np.expm1(final_normalized * y_std + y_mean)
 
+                # Clip small negative values to a minimum threshold
+                final_normalized[final_normalized < 1e-10] = 1e-10
+
                 # Create a sparse row with the normalized values
                 sparse_row_normalized = csr_matrix((final_normalized, (np.zeros_like(y_indices), y_indices)),
                                                    shape=(1, sparse_matrix.shape[1]))
@@ -107,6 +111,7 @@ def normalize_quantile_regression(expression_matrix):
 
     # Stack all normalized rows into a single sparse matrix
     normalized_matrix = csr_matrix(vstack(normalized_rows))
+    print(f"Non-zero elements after normalization: {normalized_matrix.nnz}")
 
     # Release memory for large intermediate variables
     del sparse_matrix, normalized_rows
