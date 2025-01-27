@@ -9,54 +9,133 @@ from tensorflow.keras import layers, models
 import matplotlib.pyplot as plt
 
 
-def graph_based_clustering_leiden(data, resolution=1.0, n_iterations=2):
+def graph_based_clustering_leiden(data,  n_clusters, n_neighbors_range=(5, 100), resolution_range=(0.1, 5), step=0.1):
     """
     Perform graph-based clustering using the Leiden algorithm.
 
     Parameters:
-    - data (pd.DataFrame): Dimensionality-reduced data.
-    - resolution (float): Resolution parameter for the Leiden algorithm.
-    - n_iterations (int): Number of iterations for the Leiden algorithm.
+    - data (pd.DataFrame): Dimensionality-reduced data. Each row represents a sample, and
+      each column represents a feature.
+    - n_clusters (int): Desired number of clusters. The algorithm will attempt to find the
+      closest match to this number.
+    - n_neighbors_range (tuple, optional): Range of values for the number of neighbors used
+      in the k-nearest neighbors (k-NN) graph construction. Default is (10, 50).
+    - resolution_range (tuple, optional): Range of resolution parameter values for the Leiden
+      algorithm. Higher resolutions tend to produce more clusters. Default is (0.2, 2.0).
+    - step (float, optional): Step size for iterating over the resolution parameter. Smaller
+      step sizes provide finer resolution adjustments but may increase computation time.
+      Default is 0.2.
 
     Returns:
     - pd.Series: Cluster labels for each cell.
     """
-    # Construct k-nearest neighbors graph
-    nn = NearestNeighbors(n_neighbors=30, metric='euclidean')
-    nn.fit(data)
-    adj_matrix = nn.kneighbors_graph(data, mode='distance')
+    # Variables for searching the exact n_clusters
+    closest_diff = float('inf')
+    best_result = None
+    best_params = None
+    num_clusters_previous_neighbors = -1
 
-    # Convert to igraph directly from the sparse matrix
-    sources, targets = adj_matrix.nonzero()  # Extract edges
-    weights = adj_matrix.data  # Edge weights
-    i_graph = ig.Graph(edges=list(zip(sources, targets)), edge_attrs={"weight": weights})
+    # Try different n_neighbors for NN
+    for n_neighbors in range(n_neighbors_range[0], n_neighbors_range[1] + 1, 5):
+        print(n_neighbors)
+        # Construct k-nearest neighbors graph
+        nn = NearestNeighbors(n_neighbors=n_neighbors, metric='euclidean')
+        nn.fit(data)
+        adj_matrix = nn.kneighbors_graph(data, mode='distance')
 
-    # Apply Leiden clustering
-    partition = la.find_partition(i_graph, la.RBConfigurationVertexPartition,
-                                  resolution_parameter=resolution,
-                                  n_iterations=n_iterations)
+        # Convert to igraph directly from the sparse matrix
+        sources, targets = adj_matrix.nonzero()  # Extract edges
+        weights = adj_matrix.data  # Edge weights
+        i_graph = ig.Graph(edges=list(zip(sources, targets)), edge_attrs={"weight": weights})
 
-    # Convert partition to labels
-    labels = np.array(partition.membership)
+        # Try different resolution for Leiden
+        for resolution in np.arange(resolution_range[0], resolution_range[1]+step, step):
+            print(resolution)
+            # Apply Leiden clustering
+            partition = la.find_partition(
+                i_graph, la.RBConfigurationVertexPartition,
+                resolution_parameter=resolution,
+                n_iterations=2
+            )
 
-    return pd.Series(labels, index=data.index)
+            # Get number of clusters
+            labels = np.array(partition.membership)
+            num_clusters = len(set(labels))
+
+            # Stop early if exact match is found
+            if num_clusters == n_clusters:
+                best_result = pd.Series(labels, index=data.index)
+                best_params = {"n_neighbors": n_neighbors, "resolution": resolution, "num_clusters": num_clusters}
+                return best_result, best_params
+
+            # Check how close this result is to the target
+            diff = abs(num_clusters - n_clusters)
+            if diff < closest_diff:
+                closest_diff = diff
+                best_result = pd.Series(labels, index=data.index)
+                best_params = {"n_neighbors": n_neighbors, "resolution": resolution, "num_clusters": num_clusters}
+
+            # Skip the rest of resolution values if clusters are too high
+            if num_clusters > n_clusters:
+                break
+
+    return best_result, best_params
 
 
-def density_based_clustering(data, eps=0.5, min_samples=5):
+def density_based_clustering(data, n_clusters, eps_range=(0.5, 5), min_samples_range=(3, 15), step=0.1):
     """
     Perform density-based clustering using DBSCAN.
 
     Parameters:
-    - data (pd.DataFrame): Dimensionality-reduced data.
-    - eps (float): The maximum distance between two samples for one to be considered as in the neighborhood of the other.
-    - min_samples (int): The number of samples in a neighborhood for a point to be considered as a core point.
+    - data (pd.DataFrame): Dimensionality-reduced data. Each row represents a sample, and
+      each column represents a feature.
+    - n_clusters (int): Desired number of clusters. The algorithm will attempt to find the
+      closest match to this number.
+    - eps_range (tuple, optional): Range of values for the eps parameter of DBSCAN. Default is (0.1, 1.0).
+    - min_samples_range (tuple, optional): Range of values for the min_samples parameter of DBSCAN.
+      Default is (3, 20).
+    - step (float, optional): Step size for iterating over the eps parameter. Smaller step sizes
+      provide finer resolution adjustments but may increase computation time. Default is 0.1.
 
     Returns:
     - pd.Series: Cluster labels for each cell.
     """
-    dbscan = DBSCAN(eps=eps, min_samples=min_samples)
-    labels = dbscan.fit_predict(data)
-    return pd.Series(labels, index=data.index)
+    # Variables for tracking the best result
+    closest_diff = float('inf')
+    best_result = None
+    best_params = None
+
+    # Iterate over the range of eps values
+    for eps in np.arange(eps_range[0], eps_range[1] + step, step):
+        print(eps)
+        # Iterate over the range of min_samples values
+        for min_samples in range(min_samples_range[0], min_samples_range[1] + 1):
+            print(min_samples)
+            # Apply DBSCAN clustering
+            dbscan = DBSCAN(eps=eps, min_samples=min_samples)
+            labels = dbscan.fit_predict(data)
+
+            # Calculate the number of clusters (excluding noise points labeled as -1)
+            num_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+
+            # Stop early if an exact match is found
+            if num_clusters == n_clusters:
+                best_result = pd.Series(labels, index=data.index)
+                best_params = {"eps": eps, "min_samples": min_samples, "num_clusters": num_clusters}
+                return best_result, best_params
+
+            # Update the best result if the current is closer to the target
+            diff = abs(num_clusters - n_clusters)
+            if diff < closest_diff:
+                closest_diff = diff
+                best_result = pd.Series(labels, index=data.index)
+                best_params = {"eps": eps, "min_samples": min_samples, "num_clusters": num_clusters}
+
+            # Skip the rest of min_samples values if clusters are too low
+            if num_clusters < n_clusters:
+                break
+
+    return best_result, best_params
 
 
 def distance_based_clustering(data, n_clusters=10):
