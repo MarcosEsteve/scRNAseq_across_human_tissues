@@ -117,10 +117,6 @@ def load_true_labels(metadata_path, barcode_column, celltype_column, sep='\t'):
     # Read the metadata CSV file
     metadata = pd.read_csv(metadata_path, sep=sep)
 
-    # Validate required columns
-    if barcode_column not in metadata.columns or celltype_column not in metadata.columns:
-        raise ValueError(f"Columns '{barcode_column}' and '{celltype_column}' must exist in the metadata file.")
-
     # Create a DataFrame with relevant data
     true_labels = metadata[[barcode_column, celltype_column]].rename(
         columns={barcode_column: 'barcode', celltype_column: 'true_label'}
