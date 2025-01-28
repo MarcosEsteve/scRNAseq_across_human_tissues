@@ -5,8 +5,9 @@ from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, AffinityPro
 from sklearn.mixture import GaussianMixture
 import leidenalg as la
 import igraph as ig
-from tensorflow.keras import layers, models
+from tensorflow.keras import layers, models, regularizers
 import matplotlib.pyplot as plt
+from scipy.sparse import csr_matrix
 
 
 def graph_based_clustering_leiden(data,  n_clusters, n_neighbors_range=(5, 100), resolution_range=(0.1, 5), step=0.1):
@@ -33,7 +34,6 @@ def graph_based_clustering_leiden(data,  n_clusters, n_neighbors_range=(5, 100),
     closest_diff = float('inf')
     best_result = None
     best_params = None
-    num_clusters_previous_neighbors = -1
 
     # Try different n_neighbors for NN
     for n_neighbors in range(n_neighbors_range[0], n_neighbors_range[1] + 1, 5):
@@ -180,7 +180,7 @@ def hierarchical_clustering(data, n_clusters=10, sample_fraction=0.1, random_sta
     remaining_indices = data.index.difference(sampled_indices)
     remaining_data = data.loc[remaining_indices]
 
-    knn = NearestNeighbors(n_neighbors=5)  # You can adjust the number of neighbors
+    knn = NearestNeighbors(n_neighbors=5)
     knn.fit(sampled_data)
     distances, neighbors = knn.kneighbors(remaining_data)
 
@@ -209,8 +209,8 @@ def deep_learning_clustering(data, n_clusters=10, encoding_dim=32):
     """
     # Define the autoencoder model
     input_layer = layers.Input(shape=(data.shape[1],))
-    encoded = layers.Dense(encoding_dim, activation='relu')(input_layer)
-    decoded = layers.Dense(data.shape[1], activation='sigmoid')(encoded)
+    encoded = layers.Dense(encoding_dim, activation='relu', kernel_regularizer=regularizers.l2(0.01))(input_layer)
+    decoded = layers.Dense(data.shape[1], activation='linear')(encoded)
 
     autoencoder = models.Model(input_layer, decoded)
     autoencoder.compile(optimizer='adam', loss='mean_squared_error')
@@ -229,20 +229,65 @@ def deep_learning_clustering(data, n_clusters=10, encoding_dim=32):
     return pd.Series(labels, index=data.index)
 
 
-def affinity_propagation_clustering(data):
+def affinity_propagation_clustering(data, n_clusters=10, preference_range=(-50, 50), sample_fraction=0.1,
+                                             random_state=6):
     """
-    Perform affinity propagation clustering.
+    Perform Affinity Propagation clustering on a subsample and assign remaining points using k-NN.
 
     Parameters:
-    - data (pd.DataFrame): Dimensionality-reduced data.
+    - data (pd.DataFrame): Dimensionality-reduced data (cells as rows, features as columns).
+    - n_clusters (int): Target number of clusters.
+    - preference_range (tuple): Range of preference values to try for controlling the number of clusters.
+    - sample_fraction (float): Fraction of cells to use for clustering.
+    - random_state (int): Random seed for reproducibility.
 
     Returns:
-    - pd.Series: Cluster labels for each cell.
+    - pd.Series: Cluster labels for all cells.
     """
-    affinity_propagation = AffinityPropagation(random_state=42)
-    labels = affinity_propagation.fit_predict(data)
+    # Step 1: Subsampling
+    np.random.seed(random_state)
+    sampled_indices = np.random.choice(data.index, size=int(len(data) * sample_fraction), replace=False)
+    sampled_data = data.loc[sampled_indices]
 
-    return pd.Series(labels, index=data.index)
+    # Step 2: Affinity Propagation on the subsample
+    best_result = None
+    best_diff = float('inf')
+
+    for preference in range(preference_range[0], preference_range[1] + 1):
+        print(preference)
+        affinity_propagation = AffinityPropagation(preference=preference, random_state=random_state)
+
+        labels = affinity_propagation.fit_predict(sampled_data)
+        num_clusters = len(set(labels))  # Number of clusters formed
+
+        # Stop if the exact number of clusters is reached
+        if num_clusters == n_clusters:
+            best_result = pd.Series(labels, index=sampled_data.index)
+            break
+
+        # Update the best result if the difference is smaller
+        diff = abs(num_clusters - n_clusters)
+        if diff < best_diff:
+            best_diff = diff
+            best_result = pd.Series(labels, index=sampled_data.index)
+
+    # Step 3: Assign remaining cells using k-NN
+    remaining_indices = data.index.difference(sampled_indices)
+    remaining_data = data.loc[remaining_indices]
+
+    knn = NearestNeighbors(n_neighbors=5)
+    knn.fit(sampled_data)
+    distances, neighbors = knn.kneighbors(remaining_data)
+
+    # Assign each point to the most common cluster among its neighbors
+    remaining_labels = np.array([np.bincount(best_result[neighbors[i]]).argmax() for i in range(len(remaining_data))])
+
+    # Combine labels
+    labels = pd.Series(index=data.index, dtype=int)
+    labels.loc[sampled_indices] = best_result
+    labels.loc[remaining_indices] = remaining_labels
+
+    return labels
 
 
 def mixture_model_clustering(data, n_components=10):

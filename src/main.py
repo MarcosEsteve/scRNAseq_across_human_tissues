@@ -301,6 +301,11 @@ for cleaning_method in data_cleaning_methods.keys():
                                                     selected_matrix, optimal_num_dimensions)
 
                 for cluster_method, cluster_config in clustering_methods.items():
+                    # Skip DBSCAN for UMAP, bc it is too dense and can't hold it with my hardware
+                    if dr_method == 'UMAP' and cluster_method == 'DeBC':
+                        continue
+
+                    # Perform clustering
                     clustering_results = execute_step('clustering', clustering_methods, cluster_method, reduced_matrix,
                                                       cluster_config['params'])
 
