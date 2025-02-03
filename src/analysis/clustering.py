@@ -307,32 +307,34 @@ def mixture_model_clustering(data, n_components=10):
     return pd.Series(labels, index=data.index)
 
 
-def ensemble_clustering(data, n_clusters=10, eps=0.5, min_samples=5):
+def ensemble_clustering(data, n_clusters=10):
     """
-    Perform ensemble clustering by combining results from multiple algorithms (KMeans, DBSCAN and GMM).
+    Perform ensemble clustering by combining results from multiple algorithms:
+    - Mixture Model (Gaussian Mixture)
+    - Distance-based (KMeans)
+    - Graph-based (Leiden Algorithm)
 
-    Parameters:
+     Parameters:
     - data (pd.DataFrame): Dimensionality-reduced data.
+    - n_clusters (int): Number of clusters.
 
     Returns:
     - pd.Series: Consensus cluster labels for each cell.
     """
 
-    # Run multiple clustering algorithms
-    kmeans_labels = KMeans(n_clusters=n_clusters, random_state=42, n_init=10).fit_predict(data)
-    dbscan_labels = DBSCAN(eps=eps, min_samples=min_samples).fit_predict(data)
-    gmm = GaussianMixture(n_components=n_clusters, random_state=42).fit(data)
-    gmm_labels = gmm.predict(data)
+    # Run custom clustering algorithms
+    kmeans_labels = distance_based_clustering(data, n_clusters)
+    gmm_labels = mixture_model_clustering(data, n_clusters)
+    leiden_labels, _ = graph_based_clustering_leiden(data, n_clusters)  # Only use labels
 
     # Combine results using majority voting
-    combined_labels = np.array([kmeans_labels, dbscan_labels, gmm_labels])
-
-    # Use a simple voting mechanism to determine final labels
+    combined_labels = np.array([kmeans_labels, gmm_labels, leiden_labels])
     final_labels = []
 
     for i in range(combined_labels.shape[1]):
-        label_counts = np.bincount(combined_labels[:, i].astype(int) + 1)  # +1 to handle noise label (-1)
-        final_label = np.argmax(label_counts) - 1  # Adjust back to original label range
+        print(i)
+        label_counts = np.bincount(combined_labels[:, i].astype(int))
+        final_label = np.argmax(label_counts)
         final_labels.append(final_label)
 
     return pd.Series(final_labels, index=data.index)

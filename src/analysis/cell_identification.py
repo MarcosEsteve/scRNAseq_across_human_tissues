@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 
 # Function to generate expression profiles
-def generate_expression_profiles(expression_matrix_raw, metadata_path, celltype_column='celltype_minor', sep=','):
+def generate_expression_profiles(expression_matrix_raw, metadata_path, celltype_column='celltype_major', sep=','):
     """
     Generate reference expression profiles (medians) from metadata and expression matrix.
 
