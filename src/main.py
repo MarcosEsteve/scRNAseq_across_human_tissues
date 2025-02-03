@@ -271,7 +271,12 @@ results_path = "../results"
 celltype_column = 'celltype'
 true_labels = evaluation.load_true_labels(metadata_path, 'barcodes', celltype_column, "\t")
 
+# Load expression matrix
 expression_matrix = load_expression_data_from_mtx("../data/PBMC/PBMC_68k/hg19/", barcodes_labeled=true_labels)
+
+# Generate reference data for cell identification
+expression_profile = cell_identification.generate_expression_profiles(expression_matrix, metadata_path, celltype_column=celltype_column, sep='\t')
+marker_genes = cell_identification.generate_marker_reference(expression_matrix, metadata_path, celltype_column=celltype_column, sep='\t')
 
 print(expression_matrix.info())
 
@@ -312,11 +317,11 @@ for cleaning_method in data_cleaning_methods.keys():
                     for cell_id_method in cell_identification_methods.keys():
                         # For marker_based_assignment, marker reference is needed
                         if cell_id_method == 'MBA':
-                            reference = cell_identification.generate_marker_reference(expression_matrix, metadata_path, celltype_column=celltype_column, sep='\t')
+                            reference = marker_genes
                             key = 'marker_reference'
                         # For the other 2 methods, expression_profile is needed
                         else:
-                            reference = cell_identification.generate_expression_profiles(expression_matrix, metadata_path, celltype_column=celltype_column, sep='\t')
+                            reference = expression_profile
                             key = 'expression_profile'
 
                         extra_params = {'cluster_results': clustering_results, key: reference}

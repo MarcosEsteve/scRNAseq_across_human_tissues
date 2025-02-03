@@ -332,7 +332,6 @@ def ensemble_clustering(data, n_clusters=10):
     final_labels = []
 
     for i in range(combined_labels.shape[1]):
-        print(i)
         label_counts = np.bincount(combined_labels[:, i].astype(int))
         final_label = np.argmax(label_counts)
         final_labels.append(final_label)

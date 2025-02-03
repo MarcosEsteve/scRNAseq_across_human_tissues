@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import scipy.sparse
 from scipy.spatial.distance import cdist
 import matplotlib.pyplot as plt
 
@@ -11,7 +12,7 @@ def generate_expression_profiles(expression_matrix_raw, metadata_path, celltype_
 
     Parameters:
     -----------
-    expression_matrix_raw : pd.DataFrame
+    expression_matrix_raw : pd.SparseDataFrame
         Gene expression matrix (genes x cells), where columns are cell barcodes.
     metadata_path : str
         Path to the metadata CSV file containing cell annotations.
@@ -30,20 +31,45 @@ def generate_expression_profiles(expression_matrix_raw, metadata_path, celltype_
     metadata = pd.read_csv(metadata_path, sep=sep)
     metadata.set_index('barcodes', inplace=True)  # Ensure barcodes are the index
 
-    # Align metadata with the expression matrix
+    # Filter metadata to match the expression matrix
     filtered_metadata = metadata.loc[metadata.index.intersection(expression_matrix_raw.columns)]
 
-    # Align expression matrix with metadata
-    aligned_expression_matrix = expression_matrix_raw.sparse.to_dense().loc[:, filtered_metadata.index]
+    # Align expression matrix with metadata without converting to dense
+    aligned_expression_matrix = expression_matrix_raw.loc[:, filtered_metadata.index]
 
-    # Transpose to facilitate grouping by cell type
-    aligned_expression_matrix = aligned_expression_matrix.T
-    aligned_expression_matrix[celltype_column] = filtered_metadata[celltype_column]
+    # Convert sparse dataframe to COO matrix for efficient operations
+    sparse_matrix = aligned_expression_matrix.sparse.to_coo()
 
-    # Compute median expression for each gene grouped by cell type
-    medians = aligned_expression_matrix.groupby(celltype_column).median().T
+    # Create a DataFrame mapping cell barcodes to cell types
+    cell_types = filtered_metadata[celltype_column].reindex(aligned_expression_matrix.columns)
 
-    return medians
+    # Convert COO matrix to CSR for fast row-based operations
+    sparse_matrix = sparse_matrix.tocsr()
+
+    # Compute median per gene per cell type using sparse operations
+    unique_celltypes = cell_types.unique()
+    medians_dict = {}
+
+    for cell_type in unique_celltypes:
+        # Select columns corresponding to the current cell type
+        mask = cell_types == cell_type
+        selected_columns = sparse_matrix[:, mask.to_numpy()]
+
+        # Convert to dense format to calculate median (this step may use more memory for large datasets)
+        if selected_columns.shape[1] > 0:
+            dense_columns = selected_columns.toarray()  # Convert sparse matrix to dense
+            median_values = np.median(dense_columns, axis=1)  # Calculate the median per gene (axis=1)
+            medians_dict[cell_type] = scipy.sparse.csr_matrix(median_values.reshape(-1, 1))
+
+    # Convert the dictionary of sparse vectors to a DataFrame
+    medians_sparse = scipy.sparse.hstack(list(medians_dict.values()))
+    print(medians_sparse.getnnz())
+
+    # Convert to a Pandas sparse DataFrame
+    medians_df = pd.DataFrame.sparse.from_spmatrix(medians_sparse, index=aligned_expression_matrix.index,
+                                                   columns=unique_celltypes)
+
+    return medians_df
 
 
 # Function to generate marker reference
@@ -74,22 +100,39 @@ def generate_marker_reference(expression_matrix_raw, metadata_path, celltype_col
     metadata = pd.read_csv(metadata_path, sep=sep)
     metadata.set_index('barcodes', inplace=True)  # Ensure barcodes are the index
 
-    # Align metadata with the expression matrix
+    # Filter metadata to match the expression matrix
     filtered_metadata = metadata.loc[metadata.index.intersection(expression_matrix_raw.columns)]
 
-    # Align expression matrix with filtered metadata
-    aligned_expression_matrix = expression_matrix_raw.sparse.to_dense().loc[:, filtered_metadata.index]
+    # Align expression matrix with filtered metadata without converting to dense
+    aligned_expression_matrix = expression_matrix_raw.loc[:, filtered_metadata.index]
 
-    # Transpose to facilitate grouping by cell type
-    aligned_expression_matrix = aligned_expression_matrix.T
-    aligned_expression_matrix[celltype_column] = filtered_metadata[celltype_column]
+    # Convert to COO format for efficient operations
+    sparse_matrix = aligned_expression_matrix.sparse.to_coo()
+
+    # Create a DataFrame mapping cell barcodes to cell types
+    cell_types = filtered_metadata[celltype_column].reindex(aligned_expression_matrix.columns)
+
+    # Convert to CSR format for fast row-based operations
+    sparse_matrix = sparse_matrix.tocsr()
 
     # Generate marker genes
     marker_genes = {}
-    for cell_type, group in aligned_expression_matrix.groupby(celltype_column):
-        mean_expression = group.drop(columns=[celltype_column]).mean(axis=0)
-        top_genes = mean_expression.nlargest(top_n_genes).index.tolist()
-        marker_genes[cell_type] = top_genes
+    unique_celltypes = cell_types.unique()
+
+    for cell_type in unique_celltypes:
+        # Select columns corresponding to the current cell type
+        mask = cell_types == cell_type
+        selected_columns = sparse_matrix[:, mask.to_numpy()]
+
+        # Convert sparse matrix to dense to calculate mean expression per gene
+        if selected_columns.shape[1] > 0:
+            dense_columns = selected_columns.toarray()  # Convert sparse matrix to dense for mean calculation
+            mean_expression = np.mean(dense_columns, axis=1)  # Calculate the mean per gene (axis=1)
+
+            # Get top N genes with the highest mean expression
+            top_genes_indices = np.argsort(mean_expression)[::-1][:top_n_genes]
+            top_genes = aligned_expression_matrix.index[top_genes_indices].tolist()
+            marker_genes[cell_type] = top_genes
 
     return marker_genes
 
