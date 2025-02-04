@@ -3,13 +3,13 @@ from sklearn.metrics import adjusted_rand_score, silhouette_score, normalized_mu
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 
-def internal_evaluation(expression_matrix, results_df):
+def internal_evaluation(reduced_matrix, results_df):
     """
     Perform internal evaluation of clustering and cell type assignment.
 
     Parameters:
     -----------
-    expression_matrix : pd.DataFrame
+    reduced_matrix : pd.DataFrame
         The reduced gene expression matrix (barcodes x dimensions).
     results_df : pd.DataFrame
         A dataframe containing:
@@ -27,7 +27,7 @@ def internal_evaluation(expression_matrix, results_df):
         - V-measure
     """
     # Align the expression matrix with the barcodes in the results_df
-    aligned_matrix = expression_matrix.loc[results_df['barcode']]
+    aligned_matrix = reduced_matrix.loc[results_df['barcode']]
 
     # Extract cluster labels and predicted cell types
     cluster_labels = results_df['cluster']

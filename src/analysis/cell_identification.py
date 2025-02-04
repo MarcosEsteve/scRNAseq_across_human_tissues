@@ -174,14 +174,28 @@ def reference_based_assignment(expression_matrix_processed, cluster_results, exp
     # Calculate the distance between each cluster profile and each reference cell type profile
     distances = cdist(cluster_profiles.values, expression_profile_filtered.T.values, metric="euclidean")
 
-    # Assign cell types to each cluster based on the closest profile
-    assigned_cell_types = expression_profile_filtered.columns[np.argmin(distances, axis=1)]
+    # Get the available cell types (columns of the reference expression profile)
+    available_cell_types = list(expression_profile_filtered.columns)
+
+    # Create an array to store the final assignments
+    final_assignments = [None] * len(cluster_results)
+
+    # Loop through all clusters and assign a unique cell type
+    for cluster_idx in range(distances.shape[0]):
+        # Get the index of the closest cell type (minimum distance)
+        closest_cell_type_idx = np.argmin(distances[cluster_idx])
+
+        # Assign the closest cell type to this cluster
+        final_assignments[cluster_idx] = available_cell_types[closest_cell_type_idx]
+
+        # Set the distance of this cell type to infinity for the remaining clusters
+        distances[:, closest_cell_type_idx] = np.inf
 
     # Create the results DataFrame with barcodes, cluster assignments, and assigned cell types
     results_df = pd.DataFrame({
         'barcode': cluster_results.index,  # Use the barcodes (index of cluster_results)
         'cluster': cluster_results.values,  # Use the cluster labels (values of cluster_results)
-        'celltype': [assigned_cell_types[cluster] for cluster in cluster_results.values] # Use the assigned celltypes for each cluster
+        'celltype': [final_assignments[cluster] for cluster in cluster_results.values]  # Use the assigned celltypes for each cluster
     })
 
     return results_df
@@ -219,19 +233,45 @@ def correlation_based_assignment(expression_matrix_processed, cluster_results, e
         lambda group: expression_matrix_processed_filtered.loc[:, group.index].mean(axis=1)
     ).unstack().T
 
-    # Calculate correlations between cluster profiles and the reference profiles
-    cell_type_assignments = []
+    # Calculate and store correlations for each cluster with each celltype
+    correlations_dict = {}
     for cluster in cluster_profiles.columns:
         # Compute correlation with each cell type in the reference profile
         correlations = expression_profile_filtered.corrwith(cluster_profiles[cluster])
-        # Assign the cell type with the highest correlation
-        cell_type_assignments.append(correlations.idxmax())
+        correlations_dict[cluster] = correlations
 
-    # Create a results DataFrame aligning barcodes with their assigned cell types
+    # Assign cell types and clusters ensuring no duplicates
+    cell_type_assignments = []
+    assigned_cell_types = set()  # To keep track of assigned cell types
+    assigned_clusters = set()  # To keep track of assigned clusters
+
+    # Flatten the correlations and sort by value to prioritize the maximum correlation
+    all_correlations = [
+        (cluster, cell_type, correlations_dict[cluster][cell_type])
+        for cluster in correlations_dict
+        for cell_type in correlations_dict[cluster].index
+    ]
+
+    # Sort correlations in descending order (highest correlation first)
+    sorted_correlations = sorted(all_correlations, key=lambda x: x[2], reverse=True)
+
+    # Iterate over the sorted correlations and assign cell types
+    for cluster, cell_type, correlation in sorted_correlations:
+        if cluster not in assigned_clusters and cell_type not in assigned_cell_types:
+            print(f"cluster: ", cluster, " cell_type: ", cell_type)
+            cell_type_assignments.append((cluster, cell_type))  # Assign this cell type
+            assigned_cell_types.add(cell_type)  # Mark it as assigned
+            assigned_clusters.add(cluster)  # Mark this cluster as assigned
+
+    # Now, create a results DataFrame aligning barcodes with their assigned cell types
+    # Create a mapping from clusters to cell types
+    cluster_to_cell_type = dict(cell_type_assignments)
+
+    # Assign cell types to the clusters in the result DataFrame
     results_df = pd.DataFrame({
         'barcode': cluster_results.index,
         'cluster': cluster_results.values,
-        'celltype': [cell_type_assignments[cluster] for cluster in cluster_results.values]
+        'celltype': [cluster_to_cell_type[cluster] for cluster in cluster_results.values]
     })
 
     return results_df
@@ -257,11 +297,16 @@ def marker_based_assignment(expression_matrix_processed, cluster_results, marker
     pd.DataFrame
         DataFrame with 'barcode', 'cluster', and 'celltype' columns.
     """
-    cluster_scores = {}
+    # Initialize sets to track assigned clusters and cell types
+    assigned_clusters = set()
+    assigned_cell_types = set()
 
+    # Store scores for each cluster and cell type pair
+    scores_dict = {}
+
+    # Iterate over clusters in the cluster_results
     for cluster, barcodes in cluster_results.groupby(cluster_results):
         cluster_expression = expression_matrix_processed.loc[:, barcodes.index]
-        scores = {}
 
         # Iterate over cell types and their marker genes
         for cell_type, markers in marker_reference.items():
@@ -270,19 +315,30 @@ def marker_based_assignment(expression_matrix_processed, cluster_results, marker
             if valid_markers:
                 # Calculate the mean expression of the marker genes for the cluster
                 mean_expression = cluster_expression.loc[valid_markers].mean(axis=1).sum()
-                scores[cell_type] = mean_expression
+                scores_dict[(cluster, cell_type)] = mean_expression
 
-        # Assign the cell type with the highest score
-        if scores:
-            cluster_scores[cluster] = max(scores, key=scores.get)
-        else:
-            cluster_scores[cluster] = None
+    # Sort all the scores in descending order (highest score first)
+    sorted_scores = sorted(scores_dict.items(), key=lambda x: x[1], reverse=True)
+
+    # Now assign cell types to clusters ensuring no duplicates
+    cell_type_assignments = []
+
+    # Iterate over sorted scores and assign cell types
+    for (cluster, cell_type), score in sorted_scores:
+        if cluster not in assigned_clusters and cell_type not in assigned_cell_types:
+            print(f"cluster: ", cluster, " cell_type: ", cell_type)
+            cell_type_assignments.append((cluster, cell_type))
+            assigned_clusters.add(cluster)  # Mark the cluster as assigned
+            assigned_cell_types.add(cell_type)  # Mark the cell type as assigned
 
     # Create the results DataFrame, ensuring alignment with barcodes
+    cluster_to_cell_type = dict(cell_type_assignments)
+
+    # Construct results DataFrame
     results_df = pd.DataFrame({
         'barcode': cluster_results.index,
         'cluster': cluster_results.values,
-        'celltype': [cluster_scores[cluster] for cluster in cluster_results.values]
+        'celltype': [cluster_to_cell_type[cluster] for cluster in cluster_results.values]
     })
 
     return results_df
