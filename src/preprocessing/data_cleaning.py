@@ -4,6 +4,12 @@ from scipy.sparse import csc_matrix, csr_matrix
 
 
 def remove_duplicated_genes(expression_matrix):
+    # Identify genes with no expression in any cell
+    non_expressed_genes = expression_matrix.loc[(expression_matrix != 0).sum(axis=1) == 0]
+
+    # Remove the non-expressed genes from the original matrix
+    expression_matrix = expression_matrix.drop(index=non_expressed_genes.index)
+
     # Remove duplicate genes by averaging their expression
     # Identify duplicated genes in the expression matrix
     duplicated_genes = expression_matrix.index[expression_matrix.index.duplicated(keep=False)]
@@ -21,16 +27,16 @@ def remove_duplicated_genes(expression_matrix):
     return deduplicated_matrix
 
 
-def filter_lowly_expressed_genes(expression_matrix, min_cells=3):
+def filter_lowly_expressed_genes(expression_matrix, threshold=15):
     """
         Filter Lowly Expressed Genes
 
-        This function filters out genes that are expressed in fewer than a specified number of cells.
+        This function filters out the bottom X% of genes with the lowest expression across cells.
         It is part of the "Filtering by Gene Expression Counts" step in scRNA-seq data cleaning.
 
         Parameters:
         - expression_matrix (pd.DataFrame): A pandas SparseDataFrame where rows represent genes and columns represent cells.
-        - min_cells (int): The minimum number of cells in which a gene must be expressed to be retained. Default is 3.
+        - threshold (float): The percentage of the lowest expressed genes to be removed (default: 15%).
 
         Returns:
         - pd.DataFrame: A filtered SparseDataFrame with only genes expressed in at least 'min_cells' cells.
@@ -38,11 +44,21 @@ def filter_lowly_expressed_genes(expression_matrix, min_cells=3):
     # Convert the SparseDataFrame to a sparse CSC matrix for column-wise operations
     sparse_matrix = csr_matrix(expression_matrix.sparse.to_coo())
 
+    # Remove genes that are not expressed in any cell (i.e., all zeros)
+    non_zero_gene_mask = (sparse_matrix > 0).sum(axis=1).A1 > 0  # Genes expressed in at least one cell
+    sparse_matrix = sparse_matrix[non_zero_gene_mask, :]  # Filter the sparse matrix
+
     # Count the number of cells in which each gene is expressed (non-zero entries)
     expressed_cells = (sparse_matrix > 0).sum(axis=1).A1  # .A1 converts the result to a 1D array
 
-    # Find the indices of genes expressed in at least 'min_cells' cells
-    valid_genes = expressed_cells >= min_cells
+    # Determine the threshold count based on the percentage
+    threshold_value = int(len(expressed_cells) * (threshold / 100))
+
+    # Get the sorted indices of genes based on expression counts
+    sorted_indices = expressed_cells.argsort()
+
+    # Mark the lowest threshold% of genes for removal
+    valid_genes = sorted_indices[threshold_value:]
 
     # Filter the matrix to keep only the valid genes (rows)
     filtered_sparse_matrix = sparse_matrix[valid_genes, :]

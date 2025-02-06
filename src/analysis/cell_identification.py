@@ -63,7 +63,6 @@ def generate_expression_profiles(expression_matrix_raw, metadata_path, celltype_
 
     # Convert the dictionary of sparse vectors to a DataFrame
     medians_sparse = scipy.sparse.hstack(list(medians_dict.values()))
-    print(medians_sparse.getnnz())
 
     # Convert to a Pandas sparse DataFrame
     medians_df = pd.DataFrame.sparse.from_spmatrix(medians_sparse, index=aligned_expression_matrix.index,
@@ -258,7 +257,6 @@ def correlation_based_assignment(expression_matrix_processed, cluster_results, e
     # Iterate over the sorted correlations and assign cell types
     for cluster, cell_type, correlation in sorted_correlations:
         if cluster not in assigned_clusters and cell_type not in assigned_cell_types:
-            print(f"cluster: ", cluster, " cell_type: ", cell_type)
             cell_type_assignments.append((cluster, cell_type))  # Assign this cell type
             assigned_cell_types.add(cell_type)  # Mark it as assigned
             assigned_clusters.add(cluster)  # Mark this cluster as assigned
@@ -326,7 +324,6 @@ def marker_based_assignment(expression_matrix_processed, cluster_results, marker
     # Iterate over sorted scores and assign cell types
     for (cluster, cell_type), score in sorted_scores:
         if cluster not in assigned_clusters and cell_type not in assigned_cell_types:
-            print(f"cluster: ", cluster, " cell_type: ", cell_type)
             cell_type_assignments.append((cluster, cell_type))
             assigned_clusters.add(cluster)  # Mark the cluster as assigned
             assigned_cell_types.add(cell_type)  # Mark the cell type as assigned

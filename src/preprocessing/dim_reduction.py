@@ -6,14 +6,14 @@ from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 
 
-def apply_pca(expression_matrix, threshold=0.5):
+def apply_pca(expression_matrix, threshold=5):
     """
     Apply PCA to the expression matrix, then select the optimal number of components
     based on cumulative explained variance, and return only the selected components.
 
     Parameters:
     - expression_matrix (pd.DataFrame): A pandas SparseDataFrame where rows are genes and columns are cells.
-    - threshold (float): Desired cumulative explained variance threshold to select the optimal number of components.
+    - threshold (float): Desired standard deviation threshold to select the optimal number of components.
 
     Returns:
     - pd.DataFrame: PCA-transformed data with cells as rows and selected PCs as columns.
@@ -22,7 +22,7 @@ def apply_pca(expression_matrix, threshold=0.5):
     pca = PCA(n_components=50)
     pca_result = pca.fit_transform(expression_matrix.T.sparse.to_dense())
 
-    n_components = select_pca_components(pca, std_threshold=threshold)
+    n_components = select_pca_components(pca, std_dev_threshold=threshold)
     pca_result_selected = pca_result[:, :n_components]
 
     # Return the PCA-transformed data with the optimal number of components
@@ -88,13 +88,14 @@ def visualize_dim_reduction(reduced_data, title):
     plt.show()
 
 
-def elbow_plot(pca_result, threshold=0.5):
+def elbow_plot(pca_result, std_dev_threshold=5, n_components=10):
     """
     Create an elbow plot using the standard deviation of each principal component.
 
     Parameters:
     - pca (PCA object): The fitted PCA object.
-    - threshold (float): A threshold line to help decide the number of components to retain.
+    - std_dev_threshold (float): A threshold line to help decide the number of components to retain.
+    - n_components (int): Number of PCs selected.
 
     Returns:
     - None: Displays the elbow plot.
@@ -104,7 +105,8 @@ def elbow_plot(pca_result, threshold=0.5):
 
     plt.figure(figsize=(10, 6))
     plt.plot(range(1, len(std_dev) + 1), std_dev, 'bo-', label='Standard Deviation')
-    plt.axhline(y=threshold, color='r', linestyle='--', label=f'Threshold: {threshold}')
+    plt.axhline(y=std_dev_threshold, color='r', linestyle='--', label=f'Threshold: {std_dev_threshold}')
+    plt.axvline(x=n_components, color='g', linestyle='--', label=f'Selected PCs: {n_components}')
     plt.xlabel('Principal Component')
     plt.ylabel('Standard Deviation')
     plt.title('PCA Elbow Plot')
@@ -113,7 +115,7 @@ def elbow_plot(pca_result, threshold=0.5):
     plt.show()
 
 
-def select_pca_components(pca, std_threshold=0.5):
+def select_pca_components(pca, std_dev_threshold=0.5):
     """
     Select the optimal number of PCA components based on a standard deviation threshold.
 
@@ -128,7 +130,7 @@ def select_pca_components(pca, std_threshold=0.5):
     std_dev = np.sqrt(pca.explained_variance_)
 
     # Count components with standard deviation above the threshold
-    n_components = np.sum(std_dev >= std_threshold)
+    n_components = np.sum(std_dev >= std_dev_threshold)
 
     return n_components
 

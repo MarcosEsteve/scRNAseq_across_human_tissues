@@ -132,8 +132,10 @@ def save_results(results_path, pipeline_id, cell_identification_results, interna
         'barcodes': ','.join(cell_identification_results['barcode'].tolist()),  # Convert the barcode list to a comma-separated string
         'clusters': ','.join(map(str, cell_identification_results['cluster'].tolist())),  # Convert clusters to string
         'cell_types': ','.join(cell_identification_results['celltype'].tolist()),  # Convert cell types to string
-        'ARI': internal_metrics['ARI'],
         'Silhouette_Score': internal_metrics['Silhouette_Score'],
+        'Davies_Bouldin_Index': internal_metrics['Davies_Bouldin_Index'],
+        'Calinski_Harabasz_Score': internal_metrics['Calinski_Harabasz_Score'],
+        'ARI': internal_metrics['ARI'],
         'NMI': internal_metrics['NMI'],
         'V_measure': internal_metrics['V_measure'],
         'Accuracy': external_metrics['Accuracy'],
@@ -222,63 +224,64 @@ data_cleaning_methods = {
     'FLEG': data_cleaning.filter_lowly_expressed_genes,
     'FHMC': data_cleaning.filter_high_mitochondrial_content,
     'FD': data_cleaning.filter_doublets_cxds,
-    'CC': data_cleaning.combined_cleaning,
+    'CC': data_cleaning.combined_cleaning
 }
 
 normalization_methods = {
     "CPM": normalization.normalize_cpm,
     "QR": normalization.normalize_quantile_regression,
-    "NB": normalization.normalize_negative_binomial,
+    "NB": normalization.normalize_negative_binomial
 }
 
 feature_selection_methods = {
     'SHVG': feature_selection.select_highly_variable_genes,
-    'SGbV': feature_selection.select_genes_by_variance,
+    'SGbV': feature_selection.select_genes_by_variance
 }
 
 dim_reduction_methods = {
     'PCA': dim_reduction.apply_pca,
     'UMAP': dim_reduction.apply_umap,
-    'TSNE': dim_reduction.apply_tsne,
+    'TSNE': dim_reduction.apply_tsne
 }
 
 # TO DO: adjust params
 clustering_methods = {
-    'GBC': {'func': clustering.graph_based_clustering_leiden, 'params': {'resolution': 1}},
-    'DeBC': {'func': clustering.density_based_clustering, 'params': {'eps': 0.5, 'min_samples': 5}},
+    'GBC': {'func': clustering.graph_based_clustering_leiden, 'params': {'n_clusters': 11}},
+    'DeBC': {'func': clustering.density_based_clustering, 'params': {'n_clusters': 11}},
     'DiBC': {'func': clustering.distance_based_clustering, 'params': {'n_clusters': 11}},
     'HC': {'func': clustering.hierarchical_clustering, 'params': {'n_clusters': 11}},
-    'DLC': {'func': clustering.deep_learning_clustering, 'params': {'n_clusters': 11, 'encoding_dim': 32}},
-    'APC': {'func': clustering.affinity_propagation_clustering, 'params': None},
+    'DLC': {'func': clustering.deep_learning_clustering, 'params': {'n_clusters': 11}},
     'MMC': {'func': clustering.mixture_model_clustering, 'params': {'n_components': 11}},  # n_components is n_clusters
-    'EC': {'func': clustering.ensemble_clustering, 'params': {'n_clusters': 11, 'eps': 0.5, 'min_samples': 5}},
+    'EC': {'func': clustering.ensemble_clustering, 'params': {'n_clusters': 11}}
 }
 
 cell_identification_methods = {
     'RBA': cell_identification.reference_based_assignment,
     'CBA': cell_identification.correlation_based_assignment,
-    'MBA': cell_identification.marker_based_assignment,
+    'MBA': cell_identification.marker_based_assignment
 }
 
 
-
 ### Main Pipeline ###
-# Change params of dictionaries if needed
+# Variables for tissue
 tissue = 'PBMC'
 metadata_path = "../data/PBMC/PBMC_68k/hg19/68k_pbmc_barcodes_annotation.tsv"
 results_path = "../results"
-
 celltype_column = 'celltype'
+pca_threshold = {'threshold': 5}
+
+print(f"Starting analysis for", tissue)
+
+# Load true labels
 true_labels = evaluation.load_true_labels(metadata_path, 'barcodes', celltype_column, "\t")
 
 # Load expression matrix
 expression_matrix = load_expression_data_from_mtx("../data/PBMC/PBMC_68k/hg19/", barcodes_labeled=true_labels)
+print(expression_matrix.info())
 
 # Generate reference data for cell identification
 expression_profile = cell_identification.generate_expression_profiles(expression_matrix, metadata_path, celltype_column=celltype_column, sep='\t')
 marker_genes = cell_identification.generate_marker_reference(expression_matrix, metadata_path, celltype_column=celltype_column, sep='\t')
-
-print(expression_matrix.info())
 
 for cleaning_method in data_cleaning_methods.keys():
     cleaned_matrix = execute_step('data_cleaning', data_cleaning_methods, cleaning_method, expression_matrix)
@@ -297,7 +300,7 @@ for cleaning_method in data_cleaning_methods.keys():
                 else:  # PCA or UMAP
                     # Execute PCA
                     pca_object, reduced_matrix = execute_step('dim_reduction', dim_reduction_methods, 'PCA',
-                                                            selected_matrix)
+                                                            selected_matrix, pca_threshold)
                     # If dr_method == PCA, continue, this step is already done
                     # else, if dr_method == UMAP, execute umap with the same number of dimensions as PCA
                     if dr_method == 'UMAP':
@@ -317,18 +320,13 @@ for cleaning_method in data_cleaning_methods.keys():
                     for cell_id_method in cell_identification_methods.keys():
                         # For marker_based_assignment, marker reference is needed
                         if cell_id_method == 'MBA':
-                            reference = marker_genes
-                            key = 'marker_reference'
+                            extra_params = {'cluster_results': clustering_results, 'marker_reference': marker_genes}
                         # For the other 2 methods, expression_profile is needed
                         else:
-                            reference = expression_profile
-                            key = 'expression_profile'
+                            extra_params = {'cluster_results': clustering_results,
+                                            'expression_profile': expression_profile}
 
-                        extra_params = {'cluster_results': clustering_results, key: reference}
-
-                        cell_identification_results = execute_step(
-                            'cell_identification', cell_identification_methods, cell_id_method, selected_matrix, extra_params
-                        )
+                        cell_identification_results = execute_step('cell_identification', cell_identification_methods, cell_id_method, selected_matrix, extra_params)
 
                         # Internal Evaluation
                         internal_metrics = evaluation.internal_evaluation(reduced_matrix, cell_identification_results)

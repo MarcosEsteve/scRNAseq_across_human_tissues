@@ -7,7 +7,6 @@ import leidenalg as la
 import igraph as ig
 from tensorflow.keras import layers, models, regularizers
 import matplotlib.pyplot as plt
-from scipy.sparse import csr_matrix
 
 
 def graph_based_clustering_leiden(data,  n_clusters, n_neighbors_range=(5, 100), resolution_range=(0.1, 5), step=0.1):
@@ -33,11 +32,9 @@ def graph_based_clustering_leiden(data,  n_clusters, n_neighbors_range=(5, 100),
     # Variables for searching the exact n_clusters
     closest_diff = float('inf')
     best_result = None
-    best_params = None
 
     # Try different n_neighbors for NN
     for n_neighbors in range(n_neighbors_range[0], n_neighbors_range[1] + 1, 5):
-        print(n_neighbors)
         # Construct k-nearest neighbors graph
         nn = NearestNeighbors(n_neighbors=n_neighbors, metric='euclidean')
         nn.fit(data)
@@ -50,7 +47,6 @@ def graph_based_clustering_leiden(data,  n_clusters, n_neighbors_range=(5, 100),
 
         # Try different resolution for Leiden
         for resolution in np.arange(resolution_range[0], resolution_range[1]+step, step):
-            print(resolution)
             # Apply Leiden clustering
             partition = la.find_partition(
                 i_graph, la.RBConfigurationVertexPartition,
@@ -65,21 +61,19 @@ def graph_based_clustering_leiden(data,  n_clusters, n_neighbors_range=(5, 100),
             # Stop early if exact match is found
             if num_clusters == n_clusters:
                 best_result = pd.Series(labels, index=data.index)
-                best_params = {"n_neighbors": n_neighbors, "resolution": resolution, "num_clusters": num_clusters}
-                return best_result, best_params
+                return best_result
 
             # Check how close this result is to the target
             diff = abs(num_clusters - n_clusters)
             if diff < closest_diff:
                 closest_diff = diff
                 best_result = pd.Series(labels, index=data.index)
-                best_params = {"n_neighbors": n_neighbors, "resolution": resolution, "num_clusters": num_clusters}
 
             # Skip the rest of resolution values if clusters are too high
             if num_clusters > n_clusters:
                 break
 
-    return best_result, best_params
+    return best_result
 
 
 def density_based_clustering(data, n_clusters, eps_range=(0.5, 5), min_samples_range=(3, 15), step=0.1):
@@ -103,14 +97,11 @@ def density_based_clustering(data, n_clusters, eps_range=(0.5, 5), min_samples_r
     # Variables for tracking the best result
     closest_diff = float('inf')
     best_result = None
-    best_params = None
 
     # Iterate over the range of eps values
     for eps in np.arange(eps_range[0], eps_range[1] + step, step):
-        print(eps)
         # Iterate over the range of min_samples values
         for min_samples in range(min_samples_range[0], min_samples_range[1] + 1):
-            print(min_samples)
             # Apply DBSCAN clustering
             dbscan = DBSCAN(eps=eps, min_samples=min_samples)
             labels = dbscan.fit_predict(data)
@@ -121,21 +112,19 @@ def density_based_clustering(data, n_clusters, eps_range=(0.5, 5), min_samples_r
             # Stop early if an exact match is found
             if num_clusters == n_clusters:
                 best_result = pd.Series(labels, index=data.index)
-                best_params = {"eps": eps, "min_samples": min_samples, "num_clusters": num_clusters}
-                return best_result, best_params
+                return best_result
 
             # Update the best result if the current is closer to the target
             diff = abs(num_clusters - n_clusters)
             if diff < closest_diff:
                 closest_diff = diff
                 best_result = pd.Series(labels, index=data.index)
-                best_params = {"eps": eps, "min_samples": min_samples, "num_clusters": num_clusters}
 
             # Skip the rest of min_samples values if clusters are too low
             if num_clusters < n_clusters:
                 break
 
-    return best_result, best_params
+    return best_result
 
 
 def distance_based_clustering(data, n_clusters=10):
@@ -192,6 +181,8 @@ def hierarchical_clustering(data, n_clusters=10, sample_fraction=0.1, random_sta
     labels.loc[sampled_indices] = sampled_labels
     labels.loc[remaining_indices] = remaining_labels
 
+    labels = labels.astype(int)
+
     return labels
 
 
@@ -229,67 +220,6 @@ def deep_learning_clustering(data, n_clusters=10, encoding_dim=32):
     return pd.Series(labels, index=data.index)
 
 
-def affinity_propagation_clustering(data, n_clusters=10, preference_range=(-50, 50), sample_fraction=0.1,
-                                             random_state=6):
-    """
-    Perform Affinity Propagation clustering on a subsample and assign remaining points using k-NN.
-
-    Parameters:
-    - data (pd.DataFrame): Dimensionality-reduced data (cells as rows, features as columns).
-    - n_clusters (int): Target number of clusters.
-    - preference_range (tuple): Range of preference values to try for controlling the number of clusters.
-    - sample_fraction (float): Fraction of cells to use for clustering.
-    - random_state (int): Random seed for reproducibility.
-
-    Returns:
-    - pd.Series: Cluster labels for all cells.
-    """
-    # Step 1: Subsampling
-    np.random.seed(random_state)
-    sampled_indices = np.random.choice(data.index, size=int(len(data) * sample_fraction), replace=False)
-    sampled_data = data.loc[sampled_indices]
-
-    # Step 2: Affinity Propagation on the subsample
-    best_result = None
-    best_diff = float('inf')
-
-    for preference in range(preference_range[0], preference_range[1] + 1):
-        print(preference)
-        affinity_propagation = AffinityPropagation(preference=preference, random_state=random_state)
-
-        labels = affinity_propagation.fit_predict(sampled_data)
-        num_clusters = len(set(labels))  # Number of clusters formed
-
-        # Stop if the exact number of clusters is reached
-        if num_clusters == n_clusters:
-            best_result = pd.Series(labels, index=sampled_data.index)
-            break
-
-        # Update the best result if the difference is smaller
-        diff = abs(num_clusters - n_clusters)
-        if diff < best_diff:
-            best_diff = diff
-            best_result = pd.Series(labels, index=sampled_data.index)
-
-    # Step 3: Assign remaining cells using k-NN
-    remaining_indices = data.index.difference(sampled_indices)
-    remaining_data = data.loc[remaining_indices]
-
-    knn = NearestNeighbors(n_neighbors=5)
-    knn.fit(sampled_data)
-    distances, neighbors = knn.kneighbors(remaining_data)
-
-    # Assign each point to the most common cluster among its neighbors
-    remaining_labels = np.array([np.bincount(best_result[neighbors[i]]).argmax() for i in range(len(remaining_data))])
-
-    # Combine labels
-    labels = pd.Series(index=data.index, dtype=int)
-    labels.loc[sampled_indices] = best_result
-    labels.loc[remaining_indices] = remaining_labels
-
-    return labels
-
-
 def mixture_model_clustering(data, n_components=10):
     """
     Perform clustering using Gaussian Mixture Models.
@@ -325,7 +255,7 @@ def ensemble_clustering(data, n_clusters=10):
     # Run custom clustering algorithms
     kmeans_labels = distance_based_clustering(data, n_clusters)
     gmm_labels = mixture_model_clustering(data, n_clusters)
-    leiden_labels, _ = graph_based_clustering_leiden(data, n_clusters)  # Only use labels
+    leiden_labels = graph_based_clustering_leiden(data, n_clusters)  # Only use labels
 
     # Combine results using majority voting
     combined_labels = np.array([kmeans_labels, gmm_labels, leiden_labels])

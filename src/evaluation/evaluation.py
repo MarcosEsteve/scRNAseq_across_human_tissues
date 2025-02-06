@@ -1,5 +1,5 @@
 import pandas as pd
-from sklearn.metrics import adjusted_rand_score, silhouette_score, normalized_mutual_info_score, v_measure_score
+from sklearn.metrics import adjusted_rand_score, silhouette_score, normalized_mutual_info_score, v_measure_score, davies_bouldin_score, calinski_harabasz_score
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 
@@ -21,8 +21,10 @@ def internal_evaluation(reduced_matrix, results_df):
     --------
     dict
         A dictionary containing the calculated internal metrics:
-        - ARI (Adjusted Rand Index)
         - Silhouette Score
+        - Davies Bouldin Index
+        - Calinski Harabasz Score
+        - ARI (Adjusted Rand Index)
         - NMI (Normalized Mutual Information)
         - V-measure
     """
@@ -35,12 +37,16 @@ def internal_evaluation(reduced_matrix, results_df):
 
     # Calculate internal metrics
     silhouette = silhouette_score(aligned_matrix, cluster_labels)
+    davies_bouldin = davies_bouldin_score(aligned_matrix, cluster_labels)
+    calinski_harabasz = calinski_harabasz_score(aligned_matrix, cluster_labels)
     ari = adjusted_rand_score(cell_type_labels, cluster_labels)
     nmi = normalized_mutual_info_score(cell_type_labels, cluster_labels)
     v_measure = v_measure_score(cell_type_labels, cluster_labels)
 
     return {
         "Silhouette_Score": silhouette,
+        "Davies_Bouldin_Index": davies_bouldin,
+        "Calinski_Harabasz_Score": calinski_harabasz,
         "ARI": ari,
         "NMI": nmi,
         "V_measure": v_measure
