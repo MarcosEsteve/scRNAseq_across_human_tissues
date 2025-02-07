@@ -126,6 +126,9 @@ def save_results(results_path, pipeline_id, cell_identification_results, interna
     tissue_reduced_matrix_path = f'{tissue_results_path}/{tissue}_reduced_matrix'
     os.makedirs(tissue_reduced_matrix_path, exist_ok=True)
 
+    # Remove rows where 'celltype' is None or NaN
+    cell_identification_results = cell_identification_results.dropna(subset=['celltype'])
+
     # Create a new row with the results of the pipeline
     result_row = {
         'pipeline_id': pipeline_id,  # Unique identifier for the pipeline
@@ -244,7 +247,6 @@ dim_reduction_methods = {
     'TSNE': dim_reduction.apply_tsne
 }
 
-# TO DO: adjust params
 clustering_methods = {
     'GBC': {'func': clustering.graph_based_clustering_leiden, 'params': {'n_clusters': 11}},
     'DeBC': {'func': clustering.density_based_clustering, 'params': {'n_clusters': 11}},
@@ -304,7 +306,7 @@ for cleaning_method in data_cleaning_methods.keys():
                     # If dr_method == PCA, continue, this step is already done
                     # else, if dr_method == UMAP, execute umap with the same number of dimensions as PCA
                     if dr_method == 'UMAP':
-                        optimal_num_dimensions = reduced_matrix.shape[1]  # Get the number of components (columns)
+                        optimal_num_dimensions = {'n_components': reduced_matrix.shape[1]}  # Get the number of components (columns) to run UMAP
                         reduced_matrix = execute_step('dim_reduction', dim_reduction_methods, dr_method,
                                                     selected_matrix, optimal_num_dimensions)
 
@@ -316,6 +318,11 @@ for cleaning_method in data_cleaning_methods.keys():
                     # Perform clustering
                     clustering_results = execute_step('clustering', clustering_methods, cluster_method, reduced_matrix,
                                                       cluster_config['params'])
+
+                    # If no clusters, skip and continue with the next clustering method
+                    if clustering_results.empty:
+                        print("No clusters formed, skipping this clustering method")
+                        continue
 
                     for cell_id_method in cell_identification_methods.keys():
                         # For marker_based_assignment, marker reference is needed

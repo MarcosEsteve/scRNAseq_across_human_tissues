@@ -100,8 +100,10 @@ def density_based_clustering(data, n_clusters, eps_range=(0.5, 5), min_samples_r
 
     # Iterate over the range of eps values
     for eps in np.arange(eps_range[0], eps_range[1] + step, step):
+        #print(f"EPS:", eps)
         # Iterate over the range of min_samples values
         for min_samples in range(min_samples_range[0], min_samples_range[1] + 1):
+            #print(f"Min_samples:", min_samples)
             # Apply DBSCAN clustering
             dbscan = DBSCAN(eps=eps, min_samples=min_samples)
             labels = dbscan.fit_predict(data)
@@ -112,6 +114,7 @@ def density_based_clustering(data, n_clusters, eps_range=(0.5, 5), min_samples_r
             # Stop early if an exact match is found
             if num_clusters == n_clusters:
                 best_result = pd.Series(labels, index=data.index)
+                best_result = best_result[best_result != -1]
                 return best_result
 
             # Update the best result if the current is closer to the target
@@ -124,6 +127,7 @@ def density_based_clustering(data, n_clusters, eps_range=(0.5, 5), min_samples_r
             if num_clusters < n_clusters:
                 break
 
+    best_result = best_result[best_result != -1]
     return best_result
 
 
@@ -276,16 +280,18 @@ def visualize_clusters(reduced_data, title, labels):
     Parameters:
     - reduced_data (pd.DataFrame): Dimensionality reduced data.
     - title (str): Title for the plot.
+    - labels (pd.Series): Cluster labels for each cell.
     """
+    # Align indices to remove any missing cells
+    reduced_data = reduced_data.loc[labels.index]  # Align with labels
+
     plt.figure(figsize=(10, 8))
 
     unique_labels = np.unique(labels)
     for label in unique_labels:
-        # Check if label is not -1 (outliers, in case of DBSCAN)
-        if label != -1:
-            plt.scatter(reduced_data[labels == label].iloc[:, 0],
-                        reduced_data[labels == label].iloc[:, 1],
-                        label=f'Cluster {label}', alpha=0.5, s=10)
+        plt.scatter(reduced_data[labels == label].iloc[:, 0],
+                    reduced_data[labels == label].iloc[:, 1],
+                    label=f'Cluster {label}', alpha=0.5, s=10)
     plt.title(title)
     plt.legend(title='Clusters', loc='upper right')
     plt.xlabel(reduced_data.columns[0])

@@ -28,6 +28,9 @@ def internal_evaluation(reduced_matrix, results_df):
         - NMI (Normalized Mutual Information)
         - V-measure
     """
+    # Remove rows where 'celltype' is None or NaN
+    results_df = results_df.dropna(subset=['celltype'])
+
     # Align the expression matrix with the barcodes in the results_df
     aligned_matrix = reduced_matrix.loc[results_df['barcode']]
 
@@ -79,6 +82,9 @@ def external_evaluation(results_df, true_labels_df):
         - Recall (weighted)
         - F1-score (weighted)
     """
+    # Remove rows where 'celltype' is None or NaN
+    results_df = results_df.dropna(subset=['celltype'])
+
     # Merge the two dataframes on 'barcode' to align predictions with true labels
     merged_df = pd.merge(results_df, true_labels_df, on='barcode', how='inner')
 
