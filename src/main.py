@@ -266,10 +266,10 @@ cell_identification_methods = {
 
 ### Main Pipeline ###
 # Variables for tissue
-tissue = 'PBMC'
-metadata_path = "../data/PBMC/PBMC_68k/hg19/68k_pbmc_barcodes_annotation.tsv"
+tissue = 'Tumor'
+metadata_path = "../data/Tumor/metadata_all.csv"
 results_path = "../results"
-celltype_column = 'celltype'
+celltype_column = 'celltype_major'
 pca_threshold = {'threshold': 5}
 
 print(f"Starting analysis for", tissue)

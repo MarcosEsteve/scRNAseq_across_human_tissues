@@ -180,7 +180,7 @@ def filter_doublets_cxds(expression_matrix, threshold=0.9, block_size=10000):
     return filtered_matrix
 
 
-def combined_cleaning(expression_matrix, min_cells=3, max_mito_pct=0.1, doublet_threshold=0.9):
+def combined_cleaning(expression_matrix, threshold=15, max_mito_pct=0.1, doublet_threshold=0.9):
     """
        Filter cells based on multiple criteria: low gene expression, high mitochondrial expression, and doublet scores.
 
@@ -194,7 +194,7 @@ def combined_cleaning(expression_matrix, min_cells=3, max_mito_pct=0.1, doublet_
        - pd.DataFrame: A filtered SparseDataFrame with only the valid cells remaining.
        """
     # 1. Filter low expression genes
-    lowly_expressed_genes = filter_lowly_expressed_genes(expression_matrix, min_cells=min_cells)
+    lowly_expressed_genes = filter_lowly_expressed_genes(expression_matrix, threshold=threshold)
 
     # 2. Filter cells with high mitochondrial expression
     non_mitochondrial_cells = filter_high_mitochondrial_content(expression_matrix, max_mito_pct=max_mito_pct)
