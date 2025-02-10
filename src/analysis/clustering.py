@@ -35,6 +35,7 @@ def graph_based_clustering_leiden(data,  n_clusters, n_neighbors_range=(5, 100),
 
     # Try different n_neighbors for NN
     for n_neighbors in range(n_neighbors_range[0], n_neighbors_range[1] + 1, 5):
+        #print(n_neighbors)
         # Construct k-nearest neighbors graph
         nn = NearestNeighbors(n_neighbors=n_neighbors, metric='euclidean')
         nn.fit(data)
@@ -47,6 +48,7 @@ def graph_based_clustering_leiden(data,  n_clusters, n_neighbors_range=(5, 100),
 
         # Try different resolution for Leiden
         for resolution in np.arange(resolution_range[0], resolution_range[1]+step, step):
+            #print(resolution)
             # Apply Leiden clustering
             partition = la.find_partition(
                 i_graph, la.RBConfigurationVertexPartition,

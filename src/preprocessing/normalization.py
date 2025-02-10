@@ -30,7 +30,7 @@ def normalize_cpm(expression_matrix):
     # Scale counts to counts per million (element-wise division)
     cpm_matrix = sparse_matrix.multiply(1e6).multiply(total_counts_inv)
 
-    # Apply centering & scaling for PCA directly on sparse matrix
+    # Apply scaling
     scaler = StandardScaler(with_mean=False)  # with_mean=False for sparse matrices
     cpm_matrix = scaler.fit_transform(cpm_matrix)
 
@@ -87,7 +87,7 @@ def normalize_quantile_regression(expression_matrix):
 
                 # Perform quantile regression to adjust for library size
                 mod = sm.QuantReg(y_normalized, sm.add_constant(library_size_normalized[y_indices]))
-                res = mod.fit(q=0.5)  # Median regression
+                res = mod.fit(q=0.5, max_iter=500)  # Median regression
 
                 # Predict the adjusted values and apply normalization
                 predicted = res.predict(sm.add_constant(library_size_normalized[y_indices]))
@@ -117,6 +117,10 @@ def normalize_quantile_regression(expression_matrix):
     # Release memory for large intermediate variables
     del sparse_matrix, normalized_rows
     gc.collect()  # Force garbage collection to free unused memory
+
+    # Apply scaling
+    scaler = StandardScaler(with_mean=False)  # with_mean=False for sparse matrices
+    normalized_matrix = scaler.fit_transform(normalized_matrix)
 
     # Convert the resulting sparse matrix into a SparseDataFrame
     normalized_data = pd.DataFrame.sparse.from_spmatrix(normalized_matrix,
@@ -181,6 +185,10 @@ def normalize_negative_binomial(expression_matrix):
     # Release memory for large intermediate variables
     del sparse_matrix, normalized_rows
     gc.collect()  # Force garbage collection to free unused memory
+
+    # Apply scaling
+    scaler = StandardScaler(with_mean=False)  # with_mean=False for sparse matrices
+    sparse_matrix_normalized = scaler.fit_transform(sparse_matrix_normalized)
 
     # Convert the resulting sparse matrix into a SparseDataFrame
     normalized_data = pd.DataFrame.sparse.from_spmatrix(sparse_matrix_normalized,

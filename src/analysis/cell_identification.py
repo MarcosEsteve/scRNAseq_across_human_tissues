@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 
 # Function to generate expression profiles
-def generate_expression_profiles(expression_matrix_raw, metadata_path, celltype_column='celltype_major', sep=','):
+def generate_expression_profiles(expression_matrix_raw, metadata_path, celltype_column='celltype_major', barcode_column='barcodes', sep=','):
     """
     Generate reference expression profiles (medians) from metadata and expression matrix.
 
@@ -18,6 +18,8 @@ def generate_expression_profiles(expression_matrix_raw, metadata_path, celltype_
         Path to the metadata CSV file containing cell annotations.
     celltype_column : str
         Column in the metadata file indicating the cell type to group by.
+    barcode_column : str
+        Name of the column containing the unique cell barcodes.
     sep : str, optional
         Delimiter for the metadata file (default is ',' for CSV files, use '\t' for TSV files).
 
@@ -29,7 +31,7 @@ def generate_expression_profiles(expression_matrix_raw, metadata_path, celltype_
     """
     # Load metadata
     metadata = pd.read_csv(metadata_path, sep=sep)
-    metadata.set_index('barcodes', inplace=True)  # Ensure barcodes are the index
+    metadata.set_index(barcode_column, inplace=True)  # Ensure barcodes are the index
 
     # Filter metadata to match the expression matrix
     filtered_metadata = metadata.loc[metadata.index.intersection(expression_matrix_raw.columns)]
@@ -72,7 +74,7 @@ def generate_expression_profiles(expression_matrix_raw, metadata_path, celltype_
 
 
 # Function to generate marker reference
-def generate_marker_reference(expression_matrix_raw, metadata_path, celltype_column='celltype_minor', top_n_genes=5,
+def generate_marker_reference(expression_matrix_raw, metadata_path, celltype_column='celltype_minor', barcode_column='barcodes', top_n_genes=5,
                               sep=','):
     """
     Generate a marker gene reference file based on the most expressed genes per cell type.
@@ -97,7 +99,7 @@ def generate_marker_reference(expression_matrix_raw, metadata_path, celltype_col
     """
     # Load metadata
     metadata = pd.read_csv(metadata_path, sep=sep)
-    metadata.set_index('barcodes', inplace=True)  # Ensure barcodes are the index
+    metadata.set_index(barcode_column, inplace=True)  # Ensure barcodes are the index
 
     # Filter metadata to match the expression matrix
     filtered_metadata = metadata.loc[metadata.index.intersection(expression_matrix_raw.columns)]

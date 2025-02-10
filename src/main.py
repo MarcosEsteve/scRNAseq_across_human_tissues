@@ -12,7 +12,7 @@ import src.analysis.cell_identification as cell_identification
 import src.evaluation.evaluation as evaluation
 
 
-def load_expression_data_from_mtx(path, barcodes_labeled=None, n_sample=None, random_state=None):
+def load_expression_data_from_mtx(path, matrix_name, genes_name, barcodes_name, header=None, barcodes_labeled=None, n_sample=None, random_state=None):
     """
     Load gene expression data from MTX format into a sparse DataFrame.
 
@@ -23,13 +23,13 @@ def load_expression_data_from_mtx(path, barcodes_labeled=None, n_sample=None, ra
     - expression_matrix: Sparse DataFrame containing gene expression data.
     """
     # Load expression matrix
-    matrix = scipy.io.mmread(path+"matrix.mtx").tocsc()
+    matrix = scipy.io.mmread(path+matrix_name).tocsc()
 
     # Load genes
-    genes = pd.read_csv(path+"genes.tsv", header=None, sep='\t', names=['gene_id', 'gene_symbol'])
+    genes = pd.read_csv(path+genes_name, header=header, sep='\t', names=['gene_symbol'])
 
     # Load barcodes
-    barcodes = pd.read_csv(path+"barcodes.tsv", header=None, sep='\t', names=['barcode'])
+    barcodes = pd.read_csv(path+barcodes_name, header=header, sep='\t', names=['barcode'])
 
     # Filter by labeled barcodes if barcodes_labeled is provided
     if barcodes_labeled is not None:
@@ -248,13 +248,13 @@ dim_reduction_methods = {
 }
 
 clustering_methods = {
-    'GBC': {'func': clustering.graph_based_clustering_leiden, 'params': {'n_clusters': 11}},
-    'DeBC': {'func': clustering.density_based_clustering, 'params': {'n_clusters': 11}},
-    'DiBC': {'func': clustering.distance_based_clustering, 'params': {'n_clusters': 11}},
-    'HC': {'func': clustering.hierarchical_clustering, 'params': {'n_clusters': 11}},
-    'DLC': {'func': clustering.deep_learning_clustering, 'params': {'n_clusters': 11}},
-    'MMC': {'func': clustering.mixture_model_clustering, 'params': {'n_components': 11}},  # n_components is n_clusters
-    'EC': {'func': clustering.ensemble_clustering, 'params': {'n_clusters': 11}}
+    'GBC': {'func': clustering.graph_based_clustering_leiden, 'params': {'n_clusters': 9}},
+    'DeBC': {'func': clustering.density_based_clustering, 'params': {'n_clusters': 9}},
+    'DiBC': {'func': clustering.distance_based_clustering, 'params': {'n_clusters': 9}},
+    'HC': {'func': clustering.hierarchical_clustering, 'params': {'n_clusters': 9}},
+    'DLC': {'func': clustering.deep_learning_clustering, 'params': {'n_clusters': 9}},
+    'MMC': {'func': clustering.mixture_model_clustering, 'params': {'n_components': 9}},  # n_components is n_clusters
+    'EC': {'func': clustering.ensemble_clustering, 'params': {'n_clusters': 9}}
 }
 
 cell_identification_methods = {
@@ -270,20 +270,26 @@ tissue = 'Tumor'
 metadata_path = "../data/Tumor/metadata_all.csv"
 results_path = "../results"
 celltype_column = 'celltype_major'
-pca_threshold = {'threshold': 5}
+barcode_column = 'Unnamed: 0'
+pca_threshold = {'threshold': 10}  # 5 for PBMC, 10 for Tumor,
 
 print(f"Starting analysis for", tissue)
 
 # Load true labels
-true_labels = evaluation.load_true_labels(metadata_path, 'barcodes', celltype_column, "\t")
+true_labels = evaluation.load_true_labels(metadata_path, barcode_column, celltype_column, ",")
 
 # Load expression matrix
-expression_matrix = load_expression_data_from_mtx("../data/PBMC/PBMC_68k/hg19/", barcodes_labeled=true_labels)
+expression_matrix = load_expression_data_from_mtx("../data/Tumor/",
+                                                  matrix_name="all_matrix.mtx",
+                                                  genes_name="all_genes.tsv",
+                                                  barcodes_name="all_barcodes.tsv",
+                                                  header=0,
+                                                  barcodes_labeled=None)
 print(expression_matrix.info())
 
 # Generate reference data for cell identification
-expression_profile = cell_identification.generate_expression_profiles(expression_matrix, metadata_path, celltype_column=celltype_column, sep='\t')
-marker_genes = cell_identification.generate_marker_reference(expression_matrix, metadata_path, celltype_column=celltype_column, sep='\t')
+expression_profile = cell_identification.generate_expression_profiles(expression_matrix, metadata_path, celltype_column=celltype_column, barcode_column=barcode_column, sep=',')
+marker_genes = cell_identification.generate_marker_reference(expression_matrix, metadata_path, celltype_column=celltype_column, barcode_column=barcode_column, sep=',')
 
 for cleaning_method in data_cleaning_methods.keys():
     cleaned_matrix = execute_step('data_cleaning', data_cleaning_methods, cleaning_method, expression_matrix)
