@@ -57,10 +57,12 @@ def generate_expression_profiles(expression_matrix_raw, metadata_path, celltype_
         mask = cell_types == cell_type
         selected_columns = sparse_matrix[:, mask.to_numpy()]
 
-        # Convert to dense format to calculate median (this step may use more memory for large datasets)
         if selected_columns.shape[1] > 0:
-            dense_columns = selected_columns.toarray()  # Convert sparse matrix to dense
-            median_values = np.median(dense_columns, axis=1)  # Calculate the median per gene (axis=1)
+            # Compute median without converting to dense
+            median_values = np.array([np.median(selected_columns[i, :].data) if selected_columns[i, :].nnz > 0 else 0
+                                      for i in range(selected_columns.shape[0])])
+
+            # Store as a sparse matrix
             medians_dict[cell_type] = scipy.sparse.csr_matrix(median_values.reshape(-1, 1))
 
     # Convert the dictionary of sparse vectors to a DataFrame
@@ -123,12 +125,17 @@ def generate_marker_reference(expression_matrix_raw, metadata_path, celltype_col
     for cell_type in unique_celltypes:
         # Select columns corresponding to the current cell type
         mask = cell_types == cell_type
-        selected_columns = sparse_matrix[:, mask.to_numpy()]
+        selected_columns = sparse_matrix[:, mask.to_numpy()]  # Sparse matrix slice
 
-        # Convert sparse matrix to dense to calculate mean expression per gene
         if selected_columns.shape[1] > 0:
-            dense_columns = selected_columns.toarray()  # Convert sparse matrix to dense for mean calculation
-            mean_expression = np.mean(dense_columns, axis=1)  # Calculate the mean per gene (axis=1)
+            # Sum non-zero elements in each row
+            row_sums = selected_columns.sum(axis=1).A1  # .A1 flattens the result to a 1D array
+
+            # Count non-zero elements in each row
+            row_counts = np.diff(selected_columns.indptr)  # This gives the number of non-zero elements per row
+
+            # Avoid division by zero (if no non-zero elements in a row, set mean to 0)
+            mean_expression = np.divide(row_sums, row_counts, where=row_counts > 0)
 
             # Get top N genes with the highest mean expression
             top_genes_indices = np.argsort(mean_expression)[::-1][:top_n_genes]
