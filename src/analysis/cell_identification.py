@@ -75,6 +75,38 @@ def generate_expression_profiles(expression_matrix_raw, metadata_path, celltype_
     return medians_df
 
 
+def load_expression_profiles(medians_path, metadata_path):
+    """
+        Load medians expression profile and aggregate cell types in subclasses
+
+        Parameters:
+        -----------
+        medians_path : str
+            Path to the CSV file containing median gene expression values (genes x cell types).
+        metadata_path : str
+            Path to the metadata CSV file containing cell type annotations.
+
+        Returns:
+        --------
+        pd.DataFrame
+            Aggregated gene expression profile where columns represent subclass labels.
+        """
+    # Load CSV
+    medians_df = pd.read_csv(medians_path, index_col=0, header=0)  # Genes como índice
+    metadata_df = pd.read_csv(metadata_path, header=0)
+
+    # Map cluster_label to subclass_label
+    cluster_to_subclass = metadata_df.set_index("cluster_label")["subclass_label"].to_dict()
+
+    # Rename medians_df columns using the dict
+    medians_df = medians_df.rename(columns=cluster_to_subclass)
+
+    # Calculate median for each subclass
+    aggregated_df = medians_df.groupby(level=0, axis=1).median()
+
+    return aggregated_df
+
+
 # Function to generate marker reference
 def generate_marker_reference(expression_matrix_raw, metadata_path, celltype_column='celltype_minor', barcode_column='barcodes', top_n_genes=5,
                               sep=','):
@@ -143,6 +175,28 @@ def generate_marker_reference(expression_matrix_raw, metadata_path, celltype_col
             marker_genes[cell_type] = top_genes
 
     return marker_genes
+
+
+def generate_marker_reference_from_medians(expression_profile, top_n_genes=5):
+    """
+    Retrieve the top N most expressed genes for each cell type.
+
+    Parameters:
+    -----------
+    expression_profile : pd.DataFrame
+        Aggregated gene expression matrix (genes x subclass labels).
+    top_n_genes : int, optional
+        Number of top expressed genes to select as markers for each cell type (default is 5).
+
+    Returns:
+    --------
+    dict
+        A dictionary where keys are subclass labels and values are lists of top marker genes.
+    """
+    top_genes = {}
+    for cell_type in expression_profile.columns:
+        top_genes[cell_type] = expression_profile[cell_type].nlargest(top_n_genes).index.tolist()
+    return top_genes
 
 
 # Reference-based assignment function

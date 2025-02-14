@@ -272,6 +272,7 @@ results_path = "../results"
 celltype_column = 'celltype_major'
 barcode_column = 'Unnamed: 0'
 pca_threshold = {'threshold': 10}  # 5 for PBMC, 10 for Tumor,
+num_celltypes = 9 # 11 for PBMC, 9 for Tumor,
 
 print(f"Starting analysis for", tissue)
 
@@ -291,16 +292,30 @@ print(expression_matrix.info())
 expression_profile = cell_identification.generate_expression_profiles(expression_matrix, metadata_path, celltype_column=celltype_column, barcode_column=barcode_column, sep=',')
 marker_genes = cell_identification.generate_marker_reference(expression_matrix, metadata_path, celltype_column=celltype_column, barcode_column=barcode_column, sep=',')
 
+i = 0
+j = 0
+k = 0
+
 for cleaning_method in data_cleaning_methods.keys():
+    i = i+1
+    if i == 1:
+        continue
+
     cleaned_matrix = execute_step('data_cleaning', data_cleaning_methods, cleaning_method, expression_matrix)
 
     for norm_method in normalization_methods.keys():
+        j = j+1
+        if j == 1 or j == 2:
+            continue
         normalized_matrix = execute_step('normalization', normalization_methods, norm_method, cleaned_matrix)
 
         for fs_method in feature_selection_methods.keys():
             selected_matrix = execute_step('feature_selection', feature_selection_methods, fs_method, normalized_matrix)
 
             for dr_method in dim_reduction_methods.keys():
+                k = k + 1
+                if k == 1 or k == 2:
+                    continue
                 # If tSNE, execute with predefined 2 dimensions
                 if dr_method == 'TSNE':
                     reduced_matrix = execute_step('dim_reduction', dim_reduction_methods, dr_method,
@@ -326,8 +341,8 @@ for cleaning_method in data_cleaning_methods.keys():
                                                       cluster_config['params'])
 
                     # If no clusters, skip and continue with the next clustering method
-                    if clustering_results.empty:
-                        print("No clusters formed, skipping this clustering method")
+                    if clustering_results.empty or len(clustering_results.unique()) != num_celltypes:
+                        print("Number of clusters not reached, skipping this clustering method")
                         continue
 
                     for cell_id_method in cell_identification_methods.keys():
