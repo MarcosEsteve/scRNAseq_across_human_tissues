@@ -58,42 +58,48 @@ def load_expression_data_from_mtx(path, matrix_name, genes_name, barcodes_name, 
     return expression_matrix
 
 
-def load_expression_data_from_csv(csv_path, chunk_size=10000):
+def load_expression_data_from_csv(file_path, delimiter=",", dtype="float32", chunksize=10000):
     """
-    Read a large CSV file in chunks, transpose, convert to sparse, and concatenate to avoid RAM overloading.
+    Reads a large scRNA-seq gene expression matrix from a CSV file efficiently into a Pandas SparseDataFrame.
 
     Parameters:
-    - csv_path: str, path to the CSV file.
-    - chunk_size: int, number of rows to read in each chunk.
+    - file_path (str): Path to the CSV file.
+    - delimiter (str): CSV delimiter, default is ",".
+    - dtype (str): Data type to optimize memory usage (float32 recommended).
+    - chunksize (int): Number of rows to read per chunk.
 
     Returns:
-    - expression_matrix: Sparse DataFrame containing the full gene expression data.
+    - pd.DataFrame: SparseDataFrame with genes as index and barcodes as columns.
     """
-    # Initialize a list to store processed chunks
+    # Initialize a list to accumulate the processed chunks
     processed_chunks = []
 
-    # Read the CSV in chunks
-    for chunk in pd.read_csv(csv_path, sep=',', chunksize=chunk_size, header=0, index_col=0):
-        # Transpose the chunk so rows are genes and columns are barcodes
-        chunk = chunk.T
+    # Read the matrix in chunks to optimize memory usage
+    data_chunks = pd.read_csv(
+        file_path, delimiter=delimiter, index_col=0,
+        chunksize=chunksize, low_memory=True
+    )
+    print("Start loading")
+    i = 1
+    for chunk in data_chunks:
+        print(f"Processing chunk:", i)
+        # Convert to SparseDataFrame to optimize memory usage
+        chunk_sparse = chunk.astype(pd.SparseDtype(dtype, fill_value=0))
 
-        # Convert to Sparse DataFrame
-        sparse_chunk = pd.DataFrame.sparse.from_spmatrix(scipy.sparse.csr_matrix(chunk))
+        # Transpose each chunk (Genes in rows, Barcodes in columns)
+        chunk_sparse = chunk_sparse.T
 
         # Add the processed chunk to the list
-        processed_chunks.append(sparse_chunk)
+        processed_chunks.append(chunk_sparse)
+        i = i + 1
 
-        # Free memory from the current chunk
-        del chunk  # Optional, to ensure the original chunk memory is freed
+    # Concatenate all processed chunks
+    print("Loop finished")
+    expression_matrix_sparse = pd.concat(processed_chunks, axis=1)
 
-    # Concatenate all processed chunks into a single Sparse DataFrame
-    expression_matrix = pd.concat(processed_chunks, axis=1)
+    expression_matrix_sparse = data_cleaning.remove_genes_without_expression(expression_matrix_sparse)
 
-    # Free memory from the processed chunks
-    del processed_chunks
-
-    # Return the complete Sparse DataFrame
-    return expression_matrix
+    return expression_matrix_sparse
 
 
 def save_results(results_path, pipeline_id, cell_identification_results, internal_metrics,
@@ -248,13 +254,13 @@ dim_reduction_methods = {
 }
 
 clustering_methods = {
-    'GBC': {'func': clustering.graph_based_clustering_leiden, 'params': {'n_clusters': 9}},
-    'DeBC': {'func': clustering.density_based_clustering, 'params': {'n_clusters': 9}},
-    'DiBC': {'func': clustering.distance_based_clustering, 'params': {'n_clusters': 9}},
-    'HC': {'func': clustering.hierarchical_clustering, 'params': {'n_clusters': 9}},
-    'DLC': {'func': clustering.deep_learning_clustering, 'params': {'n_clusters': 9}},
-    'MMC': {'func': clustering.mixture_model_clustering, 'params': {'n_components': 9}},  # n_components is n_clusters
-    'EC': {'func': clustering.ensemble_clustering, 'params': {'n_clusters': 9}}
+    'GBC': {'func': clustering.graph_based_clustering_leiden, 'params': {'n_clusters': 20}},
+    'DeBC': {'func': clustering.density_based_clustering, 'params': {'n_clusters': 20}},
+    'DiBC': {'func': clustering.distance_based_clustering, 'params': {'n_clusters': 20}},
+    'HC': {'func': clustering.hierarchical_clustering, 'params': {'n_clusters': 20}},
+    'DLC': {'func': clustering.deep_learning_clustering, 'params': {'n_clusters': 20}},
+    'MMC': {'func': clustering.mixture_model_clustering, 'params': {'n_components': 20}},  # n_components is n_clusters
+    'EC': {'func': clustering.ensemble_clustering, 'params': {'n_clusters': 20}}
 }
 
 cell_identification_methods = {
@@ -266,13 +272,14 @@ cell_identification_methods = {
 
 ### Main Pipeline ###
 # Variables for tissue
-tissue = 'Tumor'
-metadata_path = "../data/Tumor/metadata_all.csv"
+tissue = 'Neuronal'
+metadata_path = "../data/Neuronal/M1/metadata.csv"
+medians_path = "../data/Neuronal/M1/medians.csv"
 results_path = "../results"
-celltype_column = 'celltype_major'
-barcode_column = 'Unnamed: 0'
+celltype_column = 'subclass_label'
+barcode_column = 'sample_name'
 pca_threshold = {'threshold': 10}  # 5 for PBMC, 10 for Tumor,
-num_celltypes = 9 # 11 for PBMC, 9 for Tumor,
+num_celltypes = 20 # 11 for PBMC, 9 for Tumor,
 
 print(f"Starting analysis for", tissue)
 
@@ -289,33 +296,25 @@ expression_matrix = load_expression_data_from_mtx("../data/Tumor/",
 print(expression_matrix.info())
 
 # Generate reference data for cell identification
-expression_profile = cell_identification.generate_expression_profiles(expression_matrix, metadata_path, celltype_column=celltype_column, barcode_column=barcode_column, sep=',')
-marker_genes = cell_identification.generate_marker_reference(expression_matrix, metadata_path, celltype_column=celltype_column, barcode_column=barcode_column, sep=',')
+if tissue == 'Neuronal':
+    expression_profile = cell_identification.load_expression_profiles(medians_path, metadata_path)
+    marker_genes = cell_identification.generate_marker_reference_from_medians(expression_profile, top_n_genes=10)
+else:
+    expression_profile = cell_identification.generate_expression_profiles(expression_matrix, metadata_path, celltype_column=celltype_column, barcode_column=barcode_column, sep=',')
+    marker_genes = cell_identification.generate_marker_reference(expression_matrix, metadata_path, celltype_column=celltype_column, barcode_column=barcode_column, sep=',')
 
-i = 0
-j = 0
-k = 0
 
 for cleaning_method in data_cleaning_methods.keys():
-    i = i+1
-    if i == 1:
-        continue
 
     cleaned_matrix = execute_step('data_cleaning', data_cleaning_methods, cleaning_method, expression_matrix)
 
     for norm_method in normalization_methods.keys():
-        j = j+1
-        if j == 1 or j == 2:
-            continue
         normalized_matrix = execute_step('normalization', normalization_methods, norm_method, cleaned_matrix)
 
         for fs_method in feature_selection_methods.keys():
             selected_matrix = execute_step('feature_selection', feature_selection_methods, fs_method, normalized_matrix)
 
             for dr_method in dim_reduction_methods.keys():
-                k = k + 1
-                if k == 1 or k == 2:
-                    continue
                 # If tSNE, execute with predefined 2 dimensions
                 if dr_method == 'TSNE':
                     reduced_matrix = execute_step('dim_reduction', dim_reduction_methods, dr_method,

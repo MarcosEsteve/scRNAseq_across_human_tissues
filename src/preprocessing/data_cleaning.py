@@ -3,12 +3,29 @@ import numpy as np
 from scipy.sparse import csc_matrix, csr_matrix
 
 
-def remove_duplicated_genes(expression_matrix):
-    # Identify genes with no expression in any cell
-    non_expressed_genes = expression_matrix.loc[(expression_matrix != 0).sum(axis=1) == 0]
+def remove_genes_without_expression(expression_matrix):
+    # Convert input expression_matrix to CSR sparse format (if not already in sparse format)
+    sparse_matrix = csr_matrix(expression_matrix.sparse.to_coo())
 
+    # Identify genes with no expression in any cell (all-zero rows)
+    non_expressed_genes = sparse_matrix.getnnz(axis=1) == 0
+
+    # Remove non-expressed genes from the sparse matrix
+    sparse_matrix = sparse_matrix[~non_expressed_genes]
+
+    # Convert back to DataFrame to work with index and columns
+    filtered_expression_matrix = pd.DataFrame.sparse.from_spmatrix(
+        sparse_matrix,
+        index=expression_matrix.index[~non_expressed_genes],
+        columns=expression_matrix.columns
+    )
+
+    return filtered_expression_matrix
+
+
+def remove_duplicated_genes(expression_matrix):
     # Remove the non-expressed genes from the original matrix
-    expression_matrix = expression_matrix.drop(index=non_expressed_genes.index)
+    expression_matrix = remove_genes_without_expression(expression_matrix)
 
     # Remove duplicate genes by averaging their expression
     # Identify duplicated genes in the expression matrix
@@ -45,8 +62,8 @@ def filter_lowly_expressed_genes(expression_matrix, threshold=15):
     sparse_matrix = csr_matrix(expression_matrix.sparse.to_coo())
 
     # Remove genes that are not expressed in any cell (i.e., all zeros)
-    non_zero_gene_mask = (sparse_matrix > 0).sum(axis=1).A1 > 0  # Genes expressed in at least one cell
-    sparse_matrix = sparse_matrix[non_zero_gene_mask, :]  # Filter the sparse matrix
+    # non_zero_gene_mask = (sparse_matrix > 0).sum(axis=1).A1 > 0  # Genes expressed in at least one cell
+    # sparse_matrix = sparse_matrix[non_zero_gene_mask, :]  # Filter the sparse matrix
 
     # Count the number of cells in which each gene is expressed (non-zero entries)
     expressed_cells = (sparse_matrix > 0).sum(axis=1).A1  # .A1 converts the result to a 1D array
