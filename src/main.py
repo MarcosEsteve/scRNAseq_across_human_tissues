@@ -288,7 +288,7 @@ true_labels = evaluation.load_true_labels(metadata_path, barcode_column, celltyp
 
 # Load expression matrix
 if tissue == 'Neuronal':
-    expression_matrix = load_expression_data_from_csv("../data/Neuronal/M1/")
+    expression_matrix = load_expression_data_from_csv("../data/Neuronal/M1/matrix.csv")
 else:
     expression_matrix = load_expression_data_from_mtx("../data/Tumor/",
                                                       matrix_name="all_matrix.mtx",
@@ -308,50 +308,34 @@ else:
     marker_genes = cell_identification.generate_marker_reference(expression_matrix, metadata_path, celltype_column=celltype_column, barcode_column=barcode_column, sep=',')
 
 # Free memory if execution > 1
-cleaning_exec = 0
 for cleaning_method in data_cleaning_methods.keys():
-    cleaning_exec += 1
-    if cleaning_exec > 1:
-        del cleaned_matrix, selected_matrix, normalized_matrix, reduced_matrix, clustering_results, cell_identification_results, internal_metrics, external_metrics
 
     cleaned_matrix = execute_step('data_cleaning', data_cleaning_methods, cleaning_method, expression_matrix)
 
-    selecting_exec = 0
-    for fs_method in feature_selection_methods.keys():
-        selecting_exec += 1
-        if selecting_exec > 1:
-            del selected_matrix, normalized_matrix, reduced_matrix, clustering_results, cell_identification_results, internal_metrics, external_metrics
+    for norm_method in normalization_methods.keys():
 
-        selected_matrix = execute_step('feature_selection', feature_selection_methods, fs_method, cleaned_matrix)
+        normalized_matrix = execute_step('normalization', normalization_methods, norm_method, cleaned_matrix)
 
-        norm_exec = 0
-        for norm_method in normalization_methods.keys():
-            norm_exec += 1
-            if norm_exec > 1:
-                del normalized_matrix, reduced_matrix, clustering_results, cell_identification_results, internal_metrics, external_metrics
+        for fs_method in feature_selection_methods.keys():
 
-            normalized_matrix = execute_step('normalization', normalization_methods, norm_method, selected_matrix)
+            selected_matrix = execute_step('feature_selection', feature_selection_methods, fs_method, normalized_matrix)
 
-            dr_exec = 0
             for dr_method in dim_reduction_methods.keys():
-                dr_exec += 1
-                if dr_exec > 1:
-                    del reduced_matrix, clustering_results, cell_identification_results, internal_metrics, external_metrics
 
                 # If tSNE, execute with predefined 2 dimensions
                 if dr_method == 'TSNE':
                     reduced_matrix = execute_step('dim_reduction', dim_reduction_methods, dr_method,
-                                 normalized_matrix)
+                                 selected_matrix)
                 else:  # PCA or UMAP
                     # Execute PCA
                     pca_object, reduced_matrix = execute_step('dim_reduction', dim_reduction_methods, 'PCA',
-                                                            normalized_matrix, pca_threshold)
+                                                            selected_matrix, pca_threshold)
                     # If dr_method == PCA, continue, this step is already done
                     # else, if dr_method == UMAP, execute umap with the same number of dimensions as PCA
                     if dr_method == 'UMAP':
                         optimal_num_dimensions = {'n_components': reduced_matrix.shape[1]}  # Get the number of components (columns) to run UMAP
                         reduced_matrix = execute_step('dim_reduction', dim_reduction_methods, dr_method,
-                                                    normalized_matrix, optimal_num_dimensions)
+                                                    selected_matrix, optimal_num_dimensions)
 
                 for cluster_method, cluster_config in clustering_methods.items():
                     # Skip DBSCAN for UMAP, bc it is too dense and can't hold it with my hardware
@@ -379,12 +363,10 @@ for cleaning_method in data_cleaning_methods.keys():
                             extra_params = {'cluster_results': clustering_results,
                                             'expression_profile': expression_profile}
 
-                        cell_identification_results = execute_step('cell_identification', cell_identification_methods, cell_id_method, normalized_matrix, extra_params)
+                        cell_identification_results = execute_step('cell_identification', cell_identification_methods, cell_id_method, selected_matrix, extra_params)
 
-                        # Just run internal metrics once, as it depends on clustering, not cell_id
-                        if n_metric == 1:
-                            # Internal Evaluation
-                            internal_metrics = evaluation.internal_evaluation(reduced_matrix, cell_identification_results)
+                        # Internal Evaluation
+                        internal_metrics = evaluation.internal_evaluation(reduced_matrix, cell_identification_results)
 
                         # External Evaluation
                         external_metrics = evaluation.external_evaluation(cell_identification_results, true_labels)
