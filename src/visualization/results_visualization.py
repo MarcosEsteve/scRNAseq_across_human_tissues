@@ -29,7 +29,7 @@ def filter_by_step(df, step_methods, step_position):
     return filtered_results
 
 
-def plot_metric_by_step(filtered_results, step_name, metric, plot_type="box"):
+def plot_metric_by_step(filtered_results, step_name, metric, tissue, plot_type="box"):
     """
     Generate a boxplot to compare a given metric across different methods within a pipeline step.
 
@@ -47,7 +47,8 @@ def plot_metric_by_step(filtered_results, step_name, metric, plot_type="box"):
         The metric to visualize (e.g., 'Silhouette_Score', 'ARI', 'Accuracy').
     plot_type : str, optional
         Type of plot to generate ('box' for boxplot, 'violin' for violin plot). Default is 'box'.
-
+   tissue : str
+        The tissue type shown.
 
     Returns:
     --------
@@ -68,7 +69,7 @@ def plot_metric_by_step(filtered_results, step_name, metric, plot_type="box"):
         sns.boxplot(x=step_name, y=metric, hue=step_name, data=plot_df, palette="Set2")
         plt.title(f"Boxplot: {metric} Across {step_name} Methods")
 
-    plt.title(f"Comparison of {metric} Across {step_name} Methods")
+    plt.title(f"Comparison of {metric} Across {step_name} Methods ({tissue})")
     plt.xlabel(f"{step_name} Method")
     plt.ylabel(metric)
     plt.xticks(rotation=45)
@@ -77,42 +78,34 @@ def plot_metric_by_step(filtered_results, step_name, metric, plot_type="box"):
     plt.show()
 
 
-def get_top_performers(filtered_results, metric, top=True):
+def get_top_n_performers(df, metric, n=10):
     """
-    Retrieve the top 10 best-performing pipelines based on a given metric.
+    Retrieve the top N best-performing pipelines based on a given metric.
 
     Parameters:
     -----------
-    filtered_results : dict
-        Dictionary where keys are method names and values are DataFrames filtered by the method.
+    df : pd.DataFrame
+        DataFrame containing the results of different pipelines.
     metric : str
         The metric to evaluate (e.g., 'Silhouette_Score', 'ARI', 'Accuracy').
-    top : bool, optional (default=True)
-        If True, selects the highest values (best performance).
-        If False, selects the lowest values (for metrics where lower is better, e.g., Davies-Bouldin Index).
+    N : int, optional (default=10)
+        The number of top-performing results to return.
 
     Returns:
     --------
     pd.DataFrame
-        A DataFrame containing the top 10 best-performing results sorted by the metric.
+        A DataFrame containing the top N best-performing results sorted by the metric.
     """
 
-    # Concatenate all results into a single DataFrame
-    combined_df = pd.concat(filtered_results.values(), ignore_index=True)
-
-    # Determine sorting order (ascending for Davies-Bouldin Index, descending for others)
-    ascending = True if metric == "Davies_Bouldin_Index" else not top
-
-    # Select the top 10 rows based on the metric
-    top_df = combined_df.sort_values(by=metric, ascending=ascending).head(10)
+    # Select the top N rows based on the metric (always sorting in descending order)
+    top_df = df.sort_values(by=metric, ascending=False).head(n)
 
     return top_df
 
 
 def filter_by_barcode_length(df):
     """
-    Calculate the average barcode length and filter out pipelines whose barcode length
-    deviates by more than 10,000 from the mean.
+    Filter out pipelines whose barcode length is more than 20000 less than the maximum barcode length.
 
     Parameters:
     -----------
@@ -128,18 +121,16 @@ def filter_by_barcode_length(df):
     # Convert barcodes column to list of barcodes and calculate their lengths
     df['barcode_length'] = df['barcodes'].apply(lambda x: len(x.split(',')))
 
-    # Compute the mean barcode length
-    mean_length = df['barcode_length'].mean()
+    # Compute the maximum barcode length
+    max_length = df['barcode_length'].max()
 
-    # Identify pipelines to drop
-    dropped_pipelines = df[(df['barcode_length'] < mean_length - 10_000) |
-                           (df['barcode_length'] > mean_length + 10_000)]['pipeline_id'].tolist()
+    # Identify pipelines to drop (barcode length < max_length - 20000)
+    dropped_pipelines = df[df['barcode_length'] < max_length - 20000]['pipeline_id'].tolist()
 
-    # Filter the dataframe: keep only rows within ±10,000 of the mean
-    filtered_df = df[(df['barcode_length'] >= mean_length - 10_000) &
-                     (df['barcode_length'] <= mean_length + 10_000)].drop(columns=['barcode_length'])
+    # Filter the dataframe: keep only rows with barcode length >= max_length - 20000
+    filtered_df = df[df['barcode_length'] >= max_length - 20000].drop(columns=['barcode_length'])
 
-    print(f"Mean barcode length: {mean_length:.2f}")
+    print(f"Max barcode length: {max_length}")
     print(f"Original size: {len(df)}, Filtered size: {len(filtered_df)}, Dropped: {len(dropped_pipelines)}")
 
     return filtered_df, dropped_pipelines
@@ -233,7 +224,7 @@ def plot_heatmap_by_step(filtered_results, step_name):
     plt.show()
 
 
-def plot_global_heatmap(df):
+def plot_global_heatmap(df, tissue):
     """
     Generate a global heatmap to visualize the correlation between all metrics
     across different pipelines.
@@ -242,6 +233,8 @@ def plot_global_heatmap(df):
     -----------
     df : pd.DataFrame
         DataFrame containing the results of all pipelines with only metrics columns.
+    tissue : str
+        The tissue type shown.
 
     Returns:
     --------
@@ -256,7 +249,7 @@ def plot_global_heatmap(df):
     # Plot the heatmap
     plt.figure(figsize=(10, 8))
     sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", fmt='.2f', linewidths=0.5)
-    plt.title("Global Correlation of Metrics Across Pipelines")
+    plt.title(f"Global Correlation of Metrics Across {tissue} Pipelines ")
     plt.show()
 
 

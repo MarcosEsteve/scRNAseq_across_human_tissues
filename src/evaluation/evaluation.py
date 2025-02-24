@@ -56,6 +56,38 @@ def internal_evaluation(reduced_matrix, results_df):
     }
 
 
+def internal_metrics(results_df, true_labels_df):
+    """
+    Compute ARI, NMI, and V-measure between predicted and true cell types.
+
+    Parameters:
+    -----------
+    results_df : pd.DataFrame
+        Dataframe containing:
+        - 'barcode': Cell barcodes.
+        - 'celltype': Predicted cell type.
+    true_labels_df : pd.DataFrame
+        Dataframe containing:
+        - 'barcode': Cell barcodes.
+        - 'true_label': Ground truth cell type labels.
+
+    Returns:
+    --------
+    dict
+        Dictionary with the calculated metrics.
+    """
+    merged_df = results_df.merge(true_labels_df, on='barcode', how='inner')
+
+    cell_type_labels = merged_df['celltype']
+    true_labels = merged_df['true_label']
+
+    ari = adjusted_rand_score(true_labels, cell_type_labels)
+    nmi = normalized_mutual_info_score(true_labels, cell_type_labels)
+    v_measure = v_measure_score(true_labels, cell_type_labels)
+
+    return {"ARI": ari, "NMI": nmi, "V_measure": v_measure}
+
+
 def external_evaluation(results_df, true_labels_df):
     """
     Perform external evaluation of cell type predictions.
